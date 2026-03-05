@@ -1,0 +1,16 @@
+# deploy/helm/api/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  labels:
+    app: api
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: 80
+      targetPort: {{ .Values.service.port }}
+      protocol: TCP
+      name: http
+  selector:
+    app: api

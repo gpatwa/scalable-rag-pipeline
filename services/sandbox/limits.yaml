@@ -1,0 +1,22 @@
+# services/sandbox/limits.yaml
+
+# Hard limits for the Python Code Interpreter
+runtime:
+  # Maximum execution time before SIGKILL
+  timeout_seconds: 10
+  
+  # Maximum memory the script can allocate
+  memory_limit_mb: 512
+  
+  # Maximum CPU cores (prevent crypto mining loops)
+  cpu_limit: 0.5
+  
+  # Network Access: STRICTLY DENY
+  allow_network: false
+
+files:
+  # Max size of input data
+  max_input_size_mb: 5
+  
+  # Allowed modules (whitelist) - Optional, handled by code analysis
+  allowed_imports: ["math", "datetime", "json", "pandas", "numpy"]

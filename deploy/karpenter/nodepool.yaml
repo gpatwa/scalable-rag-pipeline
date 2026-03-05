@@ -1,0 +1,121 @@
+# deploy/karpenter/nodepool.yaml
+# Karpenter NodePool configuration for cost-effective dev/learning.
+# Karpenter auto-provisions EC2 instances based on pending pod requirements
+# and terminates them when no longer needed (scale-to-zero for GPU).
+
+---
+# NodePool for general workloads (API, ingestion CPU workers)
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: general
+spec:
+  template:
+    spec:
+      requirements:
+        # Use burstable AMD instances for cost savings
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["t3a", "t4g"]  # Dev: burstable (prod: add c6i, m6i)
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]        # SPOT for up to 70% savings
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+  limits:
+    cpu: "16"         # Dev cap: max 16 vCPUs total (prod: 200+)
+    memory: "64Gi"    # Dev cap: max 64Gi total (prod: 500Gi+)
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+  # Terminate empty nodes after 5 minutes (key for cost savings)
+  expireAfter: 720h  # Force node refresh every 30 days
+
+---
+# NodePool for GPU workloads (Ray Serve LLM/Embedding inference)
+# Scale-to-zero: Karpenter only provisions GPU nodes when pods are pending
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  template:
+    spec:
+      requirements:
+        # g5.xlarge: 1x A10G GPU, 4 vCPU, 16GB RAM (~$0.60/hr SPOT)
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["g5"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["xlarge", "2xlarge"]  # Cap instance size for dev budget
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]  # SPOT for GPU = massive savings
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: gpu
+      # Taint GPU nodes so only GPU workloads schedule here
+      taints:
+        - key: nvidia.com/gpu
+          effect: NoSchedule
+  limits:
+    cpu: "8"          # Dev cap: max 2 GPU nodes (prod: increase as needed)
+    memory: "32Gi"
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s  # Terminate GPU node 30s after last pod exits
+  expireAfter: 720h
+
+---
+# EC2NodeClass for general nodes
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest  # Amazon Linux 2023 (latest EKS-optimized AMI)
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: rag-platform-cluster  # Must match var.cluster_name
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: rag-platform-cluster
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 30Gi
+        volumeType: gp3
+        deleteOnTermination: true
+
+---
+# EC2NodeClass for GPU nodes (with NVIDIA driver)
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: gpu
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest  # EKS-optimized AMI with GPU drivers
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: rag-platform-cluster
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: rag-platform-cluster
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 80Gi   # Larger disk for model weights
+        volumeType: gp3
+        deleteOnTermination: true

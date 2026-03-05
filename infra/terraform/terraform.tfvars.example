@@ -1,0 +1,5 @@
+# infra/terraform/terraform.tfvars.example
+# Copy this to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars to git — it contains secrets.
+
+db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"

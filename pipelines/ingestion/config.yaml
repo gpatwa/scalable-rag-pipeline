@@ -1,0 +1,27 @@
+# pipelines/ingestion/config.yaml
+
+chunking:
+  # 512 tokens is the "Goldilocks" zone for RAG (enough context, not too much noise)
+  chunk_size: 512
+  
+  # Overlap ensures context isn't lost at the split point
+  chunk_overlap: 50
+  
+  # Separators for recursive splitting (Paragraphs -> Sentences -> Words)
+  separators: ["\n\n", "\n", " ", ""]
+
+embedding:
+  # The Ray Serve endpoint to use
+  endpoint: "http://ray-serve-embed:8000/embed"
+  batch_size: 100
+
+graph:
+  # Controls the LLM extraction speed vs cost
+  concurrency: 10
+  
+  # If true, strictly adheres to the schema.py ontology
+  enforce_schema: true
+
+vector_db:
+  collection_name: "rag_collection"
+  distance_metric: "Cosine"

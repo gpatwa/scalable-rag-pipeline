@@ -1,0 +1,25 @@
+# deploy/helm/neo4j/values.yaml
+
+neo4j:
+  name: "neo4j-cluster"
+  edition: "community"
+
+  core:
+    # Community Edition does NOT support Clustering.
+    # Must be 1. If you need HA, upgrade to Enterprise.
+    numberOfServers: 1
+
+    # Dev/Learning: Reduced resources (prod: 2 CPU, 8Gi)
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+
+  volumes:
+    data:
+      mode: "default" # Dynamic binding
+      storageClassName: "gp3"
+      size: "20Gi"  # Dev size (prod: 100Gi+)

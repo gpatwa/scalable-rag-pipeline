@@ -1,0 +1,66 @@
+# deploy/helm/api/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-deployment
+  labels:
+    app: api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      # Security: Run as non-root user (matches Dockerfile USER appuser uid 1000)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: app-env-secret # Pulls database passwords from ExternalSecrets
+          # Startup Probe: Allows slow startup (e.g., loading models)
+          # Checks every 5s, up to 30 attempts = 150s max startup time
+          startupProbe:
+            httpGet:
+              path: /health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          # Liveness Probe: Restarts pod if process is stuck
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness Probe: Removes pod from service if dependencies are down
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 1
+          # Container security
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # App needs /tmp for file uploads
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

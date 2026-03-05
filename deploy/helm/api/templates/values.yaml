@@ -1,0 +1,23 @@
+# deploy/helm/api/values.yaml
+# Dev/Learning config — single replica, local image (prod: 2+ replicas, ECR URI)
+
+replicaCount: 1  # Dev: 1 replica (prod: 2+ for HA)
+
+image:
+  # Dev: local image name. For prod, use ECR URI:
+  # repository: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/rag-backend-api
+  repository: rag-backend-api
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"  # Versioned tag (never use "latest" in production)
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

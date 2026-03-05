@@ -1,0 +1,12 @@
+# models/rerankers/bge-reranker.yaml
+model_config:
+  model_id: "BAAI/bge-reranker-v2-m3"
+  
+  # Precision settings
+  dtype: "float16"
+  
+  # Max length for the input pair (Query + Document)
+  max_length: 512
+  
+  # Batch size for reranking
+  batch_size: 16

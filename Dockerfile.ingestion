@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+# 1. System Dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential python3-dev libmagic-dev \
+    poppler-utils tesseract-ocr libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# 2. Force-Install the "Troublemakers" first
+RUN pip install "packaging>=24.2" "langsmith>=0.1.0" "ray==2.54.0"
+
+# 3. Install the rest of the ingestion stack
+COPY requirements-ingestion.txt .
+RUN pip install --no-cache-dir -r requirements-ingestion.txt
+
+COPY . .
+ENV PYTHONPATH=/app
+ENV RAY_ADDRESS=local

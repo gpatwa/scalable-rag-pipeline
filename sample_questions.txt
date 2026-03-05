@@ -1,0 +1,67 @@
+Sample Questions for RAG Pipeline Testing
+==========================================
+
+Use these questions to test the chat UI (http://localhost:8000) or the
+API endpoint (POST /api/v1/chat/stream) against ingested content.
+
+
+--- System Design Interview (from grok_system_design_interview.pdf) ---
+
+Fundamentals & Concepts
+
+1.  What is consistent hashing and why is it important?
+2.  Explain the differences between SQL and NoSQL databases.
+3.  What is database partitioning (sharding) and what are the common strategies?
+4.  What are the trade-offs between availability and consistency in distributed systems?
+5.  How does caching work in distributed systems and what caching strategies exist?
+
+System Design Problems
+
+6.  How would you design a URL shortening service like TinyURL?
+7.  What are the key considerations for designing a video sharing platform like YouTube?
+8.  How would you design a location-based service like Yelp?
+9.  How would you handle video uploads at scale?
+10. What are the requirements for designing a social network news feed?
+
+Scalability & Infrastructure
+
+11. How does load balancing work and what algorithms are used?
+12. What is database denormalization and when should it be used?
+13. How do you handle hot regions in a geographically sharded database?
+14. What are the ACID properties and how do NoSQL databases handle them?
+15. What is the CAP theorem and how does it affect system design?
+
+
+--- Acme Corp (from sample documents) ---
+
+Company
+
+16. Who founded Acme Corp and when?
+17. How much funding has Acme Corp raised and from whom?
+18. Where are Acme Corp's offices located?
+
+Product & Architecture
+
+19. What is MedAssist and what technology stack does it use?
+20. How does MedAssist's retrieval pipeline work?
+21. What embedding model and LLM does MedAssist use?
+22. What is the end-to-end latency of the MedAssist system?
+
+Team & Process
+
+23. Who is the VP of Engineering at Acme Corp and where did she come from?
+24. What programming languages and frameworks does the Acme engineering team use?
+25. What development methodology does the team follow?
+
+
+--- Cloud Computing (from test_cloud.docx) ---
+
+26. How do spot instances help reduce compute costs?
+27. What is Karpenter and how does it relate to Kubernetes?
+28. What are the cost optimization strategies for cloud workloads?
+
+
+--- Cross-Document (tests hybrid retrieval across sources) ---
+
+29. Compare MedAssist's architecture to the system design patterns described for URL shortening services.
+30. What technologies are shared between Acme Corp's stack and the system design interview recommendations?

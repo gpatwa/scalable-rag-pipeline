@@ -1,0 +1,40 @@
+# services/api/.dockerignore
+# Exclude files that should not be copied into the Docker image
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests (not needed in production image)
+tests/
+test_*.py
+
+# Documentation
+*.md
+docs/
+
+# Docker files (prevent recursive copy)
+Dockerfile
+docker-compose*.yml
+.dockerignore

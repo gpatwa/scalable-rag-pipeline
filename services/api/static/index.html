@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Platform</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1b26;
+    --surface2: #24253a;
+    --border: #2f3146;
+    --text: #e1e2e8;
+    --text-dim: #8b8fa3;
+    --accent: #7c6ef0;
+    --accent-dim: #5b4dc7;
+    --green: #4ec99b;
+    --amber: #e6a040;
+    --red: #e55561;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────── */
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header h1 span { font-size: 22px; }
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+  .status-dot.green { background: var(--green); }
+  .status-dot.red { background: var(--red); }
+  .status-dot.amber { background: var(--amber); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* ── Chat Area ──────────────────────────── */
+  #chat-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #chat-area::-webkit-scrollbar { width: 6px; }
+  #chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    gap: 12px;
+    animation: fadeIn 0.25s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .msg-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .msg.user .msg-avatar { background: var(--accent-dim); }
+  .msg.assistant .msg-avatar { background: var(--surface2); border: 1px solid var(--border); }
+
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-role {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .msg-content {
+    font-size: 15px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .msg.user .msg-content { color: var(--text); }
+  .msg.assistant .msg-content { color: #c8cad4; }
+
+  /* ── Pipeline steps ─────────────────────── */
+  .pipeline-steps {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .step-chip {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .step-chip.done { background: rgba(78,201,155,0.12); color: var(--green); }
+  .step-chip.active { background: rgba(230,160,64,0.12); color: var(--amber); }
+  .step-chip .checkmark { font-size: 12px; }
+
+  /* ── Source badges ──────────────────────── */
+  .source-badge {
+    display: inline-block;
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin: 2px 2px 0 0;
+    color: var(--accent);
+  }
+
+  /* ── Welcome ────────────────────────────── */
+  #welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    gap: 12px;
+    padding: 40px;
+  }
+  #welcome h2 { font-size: 22px; color: var(--text); font-weight: 600; }
+  #welcome p { font-size: 14px; max-width: 440px; text-align: center; line-height: 1.6; }
+  .suggestions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .suggestion-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .suggestion-btn:hover { border-color: var(--accent); background: var(--surface2); }
+
+  /* ── Input Bar ──────────────────────────── */
+  #input-bar {
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .input-wrapper {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 6px 6px 6px 18px;
+    align-items: flex-end;
+    transition: border-color 0.15s;
+  }
+  .input-wrapper:focus-within { border-color: var(--accent); }
+
+  #user-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+    resize: none;
+    max-height: 140px;
+    min-height: 24px;
+    line-height: 24px;
+    padding: 8px 0;
+  }
+  #user-input::placeholder { color: var(--text-dim); }
+
+  #send-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  #send-btn:hover { background: var(--accent-dim); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .footer-text {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    max-width: 780px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>&#x1f9e0;</span> RAG Platform</h1>
+  <div class="status-bar">
+    <span id="api-status"><span class="status-dot red"></span> Connecting...</span>
+    <span id="session-id" style="font-family: monospace; font-size: 11px;"></span>
+  </div>
+</header>
+
+<div id="chat-area">
+  <div id="welcome">
+    <h2>Enterprise RAG Assistant</h2>
+    <p>Ask questions about your ingested documents. The agent plans, retrieves from vector + graph stores, and synthesizes an answer.</p>
+    <div class="suggestions">
+      <button class="suggestion-btn" onclick="askSuggestion(this)">Who founded Acme Corp?</button>
+      <button class="suggestion-btn" onclick="askSuggestion(this)">What tech stack does MedAssist use?</button>
+      <button class="suggestion-btn" onclick="askSuggestion(this)">Who is the VP of Engineering?</button>
+    </div>
+  </div>
+</div>
+
+<div id="input-bar">
+  <div class="input-wrapper">
+    <textarea id="user-input" rows="1" placeholder="Ask a question..." autofocus></textarea>
+    <button id="send-btn" onclick="sendMessage()" title="Send">&#x27A4;</button>
+  </div>
+  <div class="footer-text">Planner &rarr; Retriever (Qdrant + Neo4j) &rarr; Responder (Ollama) &mdash; Streaming NDJSON</div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+let token = null;
+let sessionId = null;
+let isStreaming = false;
+
+// ── Auto-resize textarea ──────────────────────
+const input = document.getElementById('user-input');
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+});
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// ── Init: get token + check health ────────────
+async function init() {
+  try {
+    // Health check
+    const healthRes = await fetch(`${API_BASE}/health/readiness`);
+    const health = await healthRes.json();
+    const allUp = health.redis === 'up' && health.neo4j === 'up';
+
+    const dot = document.querySelector('#api-status .status-dot');
+    const label = document.querySelector('#api-status');
+    if (allUp) {
+      dot.className = 'status-dot green';
+      label.innerHTML = `<span class="status-dot green"></span> Connected`;
+    } else {
+      dot.className = 'status-dot amber';
+      label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
+    }
+
+    // Get dev token
+    const tokenRes = await fetch(`${API_BASE}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'ui-user', role: 'admin' })
+    });
+    const tokenData = await tokenRes.json();
+    token = tokenData.access_token;
+  } catch (e) {
+    const label = document.querySelector('#api-status');
+    label.innerHTML = `<span class="status-dot red"></span> Offline`;
+  }
+}
+
+// ── Send message ──────────────────────────────
+async function sendMessage() {
+  const text = input.value.trim();
+  if (!text || isStreaming || !token) return;
+
+  // Hide welcome
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.remove();
+
+  // Add user message
+  appendMessage('user', text);
+  input.value = '';
+  input.style.height = 'auto';
+  isStreaming = true;
+  document.getElementById('send-btn').disabled = true;
+
+  // Create assistant placeholder
+  const assistantEl = appendMessage('assistant', '', true);
+  const stepsEl = assistantEl.querySelector('.pipeline-steps');
+  const contentEl = assistantEl.querySelector('.msg-content');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message: text, session_id: sessionId })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          handleEvent(event, stepsEl, contentEl);
+        } catch (e) { /* skip non-JSON lines */ }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.trim()) {
+      try { handleEvent(JSON.parse(buffer), stepsEl, contentEl); } catch(e) {}
+    }
+  } catch (e) {
+    contentEl.textContent = `Error: ${e.message}`;
+  }
+
+  isStreaming = false;
+  document.getElementById('send-btn').disabled = false;
+  input.focus();
+}
+
+// ── Handle streaming events ───────────────────
+function handleEvent(event, stepsEl, contentEl) {
+  if (event.session_id && !sessionId) {
+    sessionId = event.session_id;
+    document.getElementById('session-id').textContent = `session: ${sessionId.slice(0, 8)}...`;
+  }
+
+  if (event.type === 'status') {
+    const name = event.node;
+    if (name === '__end__') {
+      // Mark all as done
+      stepsEl.querySelectorAll('.step-chip.active').forEach(el => {
+        el.classList.remove('active');
+        el.classList.add('done');
+        el.querySelector('.checkmark').textContent = '\u2713';
+      });
+      return;
+    }
+    // Mark previous active as done
+    stepsEl.querySelectorAll('.step-chip.active').forEach(el => {
+      el.classList.remove('active');
+      el.classList.add('done');
+      el.querySelector('.checkmark').textContent = '\u2713';
+    });
+    // Add new step
+    const chip = document.createElement('span');
+    chip.className = 'step-chip done';
+    const icon = { planner: '\u{1F9E0}', retriever: '\u{1F50D}', responder: '\u{2728}' }[name] || '\u2699';
+    chip.innerHTML = `${icon} ${name} <span class="checkmark">\u2713</span>`;
+    stepsEl.appendChild(chip);
+    scrollToBottom();
+  }
+
+  if (event.type === 'answer') {
+    contentEl.textContent = event.content;
+
+    // Extract [Source: ...] references and render as badges
+    const sourceRegex = /\[Source:\s*([^\]]+)\]/g;
+    let match;
+    const sources = [];
+    while ((match = sourceRegex.exec(event.content)) !== null) {
+      sources.push(match[1]);
+    }
+    if (sources.length > 0) {
+      // Clean sources from text and add badges
+      const cleanText = event.content.replace(sourceRegex, '').trim();
+      contentEl.textContent = cleanText;
+      const badgeContainer = document.createElement('div');
+      badgeContainer.style.marginTop = '8px';
+      sources.forEach(s => {
+        const badge = document.createElement('span');
+        badge.className = 'source-badge';
+        badge.textContent = '\u{1F4C4} ' + s.trim();
+        badgeContainer.appendChild(badge);
+      });
+      contentEl.appendChild(badgeContainer);
+    }
+    scrollToBottom();
+  }
+
+  if (event.type === 'error') {
+    contentEl.textContent = '\u274C ' + event.content;
+    contentEl.style.color = '#e55561';
+  }
+}
+
+// ── DOM helpers ───────────────────────────────
+function appendMessage(role, text, withSteps = false) {
+  const chat = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+
+  const avatarIcon = role === 'user' ? '\u{1F464}' : '\u{1F916}';
+  let bodyHTML = `
+    <div class="msg-avatar">${avatarIcon}</div>
+    <div class="msg-body">
+      <div class="msg-role">${role}</div>
+      ${withSteps ? '<div class="pipeline-steps"></div>' : ''}
+      <div class="msg-content">${escapeHtml(text)}</div>
+    </div>`;
+  div.innerHTML = bodyHTML;
+  chat.appendChild(div);
+  scrollToBottom();
+  return div;
+}
+
+function scrollToBottom() {
+  const chat = document.getElementById('chat-area');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+function askSuggestion(btn) {
+  input.value = btn.textContent;
+  sendMessage();
+}
+
+// Boot
+init();
+</script>
+</body>
+</html>

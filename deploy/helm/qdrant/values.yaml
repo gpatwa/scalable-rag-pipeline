@@ -1,0 +1,27 @@
+# deploy/helm/qdrant/values.yaml
+
+# Dev/Learning: Single replica (scale to 3 for production fault tolerance)
+replicaCount: 1
+
+config:
+  storage:
+    # Use Memmap for storage (stores vectors on disk but maps to RAM)
+    # Allows handling datasets larger than RAM.
+    on_disk_payload: true
+
+  service:
+    enable_tls: false # TLS handled by Ingress/Mesh
+
+# Dev/Learning: Reduced resources (prod: 2-4 CPU, 4-8Gi)
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+# Persistence: Reduced for dev (prod: 50Gi+)
+persistence:
+  size: 20Gi
+  storageClassName: gp3
