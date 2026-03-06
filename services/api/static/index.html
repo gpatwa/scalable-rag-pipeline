@@ -300,23 +300,10 @@ input.addEventListener('keydown', (e) => {
 
 // ── Init: get token + check health ────────────
 async function init() {
+  const label = document.querySelector('#api-status');
+
+  // 1. Get dev token first (critical path — don't block on health)
   try {
-    // Health check
-    const healthRes = await fetch(`${API_BASE}/health/readiness`);
-    const health = await healthRes.json();
-    const allUp = health.redis === 'up' && health.neo4j === 'up';
-
-    const dot = document.querySelector('#api-status .status-dot');
-    const label = document.querySelector('#api-status');
-    if (allUp) {
-      dot.className = 'status-dot green';
-      label.innerHTML = `<span class="status-dot green"></span> Connected`;
-    } else {
-      dot.className = 'status-dot amber';
-      label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
-    }
-
-    // Get dev token
     const tokenRes = await fetch(`${API_BASE}/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -324,9 +311,25 @@ async function init() {
     });
     const tokenData = await tokenRes.json();
     token = tokenData.access_token;
+    label.innerHTML = `<span class="status-dot green"></span> Connected`;
   } catch (e) {
-    const label = document.querySelector('#api-status');
     label.innerHTML = `<span class="status-dot red"></span> Offline`;
+    return;
+  }
+
+  // 2. Background health check (non-blocking, with timeout)
+  try {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5000);
+    const healthRes = await fetch(`${API_BASE}/health/readiness`, { signal: controller.signal });
+    const health = await healthRes.json();
+    const allUp = health.redis === 'up' && health.neo4j === 'up';
+    if (!allUp) {
+      label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
+    }
+  } catch (e) {
+    // Readiness check timed out or failed — still functional for chat
+    label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
   }
 }
 
