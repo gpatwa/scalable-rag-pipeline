@@ -5,7 +5,9 @@ Designed to work from local machine with port-forwarded Qdrant.
 
 Usage:
     OPENAI_API_KEY=sk-... python scripts/ingest_openai.py data/test-docs/aws_well_architected.pdf
+    OPENAI_API_KEY=sk-... python scripts/ingest_openai.py --tenant-id acme-corp data/test-docs/doc.pdf
 """
+import argparse
 import asyncio
 import os
 import sys
@@ -23,6 +25,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
+DEFAULT_TENANT_ID = "default"
 
 
 # ── PDF Parsing ─────────────────────────────────────────────────────────────
@@ -71,7 +74,12 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 # ── Qdrant Upsert ──────────────────────────────────────────────────────────
-def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: str):
+def upsert_qdrant(
+    chunks: list[str],
+    embeddings: list[list[float]],
+    filename: str,
+    tenant_id: str = DEFAULT_TENANT_ID,
+):
     from qdrant_client import QdrantClient
     from qdrant_client.http import models
 
@@ -84,6 +92,7 @@ def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: st
             payload={
                 "text": chunk,
                 "metadata": {"filename": filename, "chunk_index": i},
+                "tenant_id": tenant_id,
             },
         )
         for i, (chunk, emb) in enumerate(zip(chunks, embeddings))
@@ -94,31 +103,44 @@ def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: st
         batch = points[i:i + batch_size]
         client.upsert(collection_name=QDRANT_COLLECTION, points=batch)
 
-    logger.info(f"  Qdrant: upserted {len(points)} vectors into '{QDRANT_COLLECTION}'")
+    logger.info(f"  Qdrant: upserted {len(points)} vectors into '{QDRANT_COLLECTION}' (tenant={tenant_id})")
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
 async def main():
-    if len(sys.argv) < 2:
-        print("Usage: OPENAI_API_KEY=sk-... python scripts/ingest_openai.py <pdf_file>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Ingest a PDF into Qdrant using OpenAI embeddings",
+        epilog="Example:\n"
+               "  OPENAI_API_KEY=sk-... python scripts/ingest_openai.py report.pdf\n"
+               "  OPENAI_API_KEY=sk-... python scripts/ingest_openai.py --tenant-id acme report.pdf\n",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("filepath", help="Path to a PDF file")
+    parser.add_argument(
+        "--tenant-id",
+        default=DEFAULT_TENANT_ID,
+        help=f"Tenant ID to tag vectors with (default: '{DEFAULT_TENANT_ID}')",
+    )
+    args = parser.parse_args()
 
-    filepath = sys.argv[1]
-    if not os.path.exists(filepath):
-        print(f"File not found: {filepath}")
+    if not os.path.exists(args.filepath):
+        print(f"File not found: {args.filepath}")
         sys.exit(1)
 
     if not OPENAI_API_KEY:
         print("Error: OPENAI_API_KEY environment variable is required")
         sys.exit(1)
 
-    filename = os.path.basename(filepath)
+    filename = os.path.basename(args.filepath)
+    tenant_id = args.tenant_id
+
     logger.info("=" * 60)
     logger.info(f"  Ingesting: {filename}")
+    logger.info(f"  Tenant:    {tenant_id}")
     logger.info("=" * 60)
 
     # 1. Parse
-    text = parse_pdf(filepath)
+    text = parse_pdf(args.filepath)
 
     # 2. Chunk
     chunks = chunk_text(text)
@@ -128,11 +150,11 @@ async def main():
     logger.info(f"  Embedding via OpenAI ({EMBED_MODEL})...")
     embeddings = await embed_texts(chunks)
 
-    # 4. Upsert to Qdrant
-    upsert_qdrant(chunks, embeddings, filename)
+    # 4. Upsert to Qdrant (tagged with tenant_id)
+    upsert_qdrant(chunks, embeddings, filename, tenant_id=tenant_id)
 
     logger.info("\n" + "=" * 60)
-    logger.info(f"  Done! {len(chunks)} chunks indexed.")
+    logger.info(f"  Done! {len(chunks)} chunks indexed for tenant '{tenant_id}'.")
     logger.info(f"  Try asking questions about '{filename}' in the chat UI.")
     logger.info("=" * 60)
 

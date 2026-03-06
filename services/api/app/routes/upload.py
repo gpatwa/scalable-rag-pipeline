@@ -1,67 +1,67 @@
 # services/api/app/routes/upload.py
-import boto3
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.config import settings
-from app.auth.jwt import get_current_user # Assume auth exists
+from app.auth.tenant import TenantContext, get_tenant_context
+from app.clients.storage.factory import create_storage_client
 import uuid
 
 router = APIRouter()
 
-# Initialize S3 Client (boto3 is synchronous, but presigning is fast/CPU-bound)
-# For local dev, point to MinIO via S3_ENDPOINT_URL
-_s3_kwargs = {"region_name": settings.AWS_REGION}
-if settings.S3_ENDPOINT_URL:
-    _s3_kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
-    _s3_kwargs["aws_access_key_id"] = settings.AWS_ACCESS_KEY_ID
-    _s3_kwargs["aws_secret_access_key"] = settings.AWS_SECRET_ACCESS_KEY
+# Initialize cloud storage client via provider factory
+# Works with S3 (AWS/MinIO) or Azure Blob — selected via STORAGE_PROVIDER env var
+storage_client = create_storage_client(settings.STORAGE_PROVIDER)
 
-s3_client = boto3.client("s3", **_s3_kwargs)
 
 class PresignedURLRequest(BaseModel):
     filename: str
-    content_type: str # e.g., "application/pdf"
+    content_type: str  # e.g., "application/pdf"
+
 
 class PresignedURLResponse(BaseModel):
     upload_url: str
     file_id: str
-    s3_key: str
+    object_key: str
+
 
 @router.post("/generate-presigned-url", response_model=PresignedURLResponse)
 async def generate_upload_url(
     req: PresignedURLRequest,
-    user: dict = Depends(get_current_user) # Secure endpoint
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """
-    Generates a secure, temporary URL for the frontend to upload a file directly to S3.
+    Generates a secure, temporary URL for the frontend to upload a file
+    directly to cloud storage (S3 or Azure Blob).
+
     Use case: Handling 1GB+ PDF/Video files without blocking the API server.
+
+    Object keys are namespaced by tenant_id to enforce storage isolation:
+        uploads/{tenant_id}/{user_id}/{file_id}.{ext}
     """
     # 1. Generate a unique file ID (UUID) to prevent overwrites
     file_id = str(uuid.uuid4())
-    extension = req.filename.split('.')[-1] if '.' in req.filename else "bin"
-    s3_key = f"uploads/{user['id']}/{file_id}.{extension}"
+    extension = req.filename.split(".")[-1] if "." in req.filename else "bin"
+
+    # Namespace by tenant_id + user_id for isolation
+    object_key = f"uploads/{ctx.tenant_id}/{ctx.user_id}/{file_id}.{extension}"
 
     try:
-        # 2. Generate the Presigned URL
-        # The frontend uses this URL with a PUT request.
-        url = s3_client.generate_presigned_url(
-            ClientMethod='put_object',
-            Params={
-                'Bucket': settings.S3_BUCKET_NAME,
-                'Key': s3_key,
-                'ContentType': req.content_type,
-                'Metadata': {
-                    'original_filename': req.filename,
-                    'user_id': user['id']
-                }
+        # 2. Generate the Presigned URL via the abstracted StorageClient
+        url = storage_client.generate_presigned_upload_url(
+            key=object_key,
+            content_type=req.content_type,
+            metadata={
+                "original_filename": req.filename,
+                "user_id": ctx.user_id,
+                "tenant_id": ctx.tenant_id,
             },
-            ExpiresIn=3600 # URL valid for 1 hour
+            expires_in=3600,  # URL valid for 1 hour
         )
-        
+
         return PresignedURLResponse(
             upload_url=url,
             file_id=file_id,
-            s3_key=s3_key
+            object_key=object_key,
         )
 
     except Exception as e:

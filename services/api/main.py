@@ -6,14 +6,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
-from app.clients.neo4j import neo4j_client
 from app.clients.ray_llm import llm_client
 from app.clients.ray_embed import embed_client
+from app.clients.vectordb.factory import create_vectordb_client
+from app.clients.graphdb.factory import create_graphdb_client
 from app.cache.redis import redis_client
+from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
+from app.agents.nodes.retriever import set_clients as set_retriever_clients
 from app.routes import chat, upload, health, auth
+from app.routes.health import set_clients as set_health_clients
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Create VectorDB and GraphDB clients via provider factories
+vectordb_client = create_vectordb_client(settings.VECTORDB_PROVIDER)
+graphdb_client = create_graphdb_client(settings.GRAPHDB_PROVIDER)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,10 +32,30 @@ async def lifespan(app: FastAPI):
     """
     # 1. Startup
     logger.info("Initializing clients...")
-    neo4j_client.connect()
+
+    # Core clients
     await redis_client.connect()
     await llm_client.start()
     await embed_client.start()
+
+    # Abstracted DB clients (VectorDB + GraphDB)
+    await vectordb_client.connect()
+    await graphdb_client.connect()
+
+    # Inject abstracted clients into modules that need them
+    set_retriever_clients(vectordb_client, graphdb_client)
+    set_semantic_vectordb(vectordb_client)
+    set_health_clients(vectordb_client, graphdb_client)
+
+    # Load per-tenant configurations
+    from app.tenants.registry import tenant_registry
+    await tenant_registry.load(source=settings.TENANT_CONFIG_SOURCE)
+
+    # Initialize JWKS fetcher for external IdP (Auth0, Azure AD, Cognito)
+    if settings.AUTH_PROVIDER != "local" and settings.JWT_JWKS_URL:
+        from app.auth.jwks import init_jwks_fetcher
+        await init_jwks_fetcher(settings.JWT_JWKS_URL)
+        logger.info(f"JWKS fetcher initialised for {settings.AUTH_PROVIDER}")
 
     # Wire up OpenTelemetry observability (tracing + auto-instrumentation)
     try:
@@ -40,7 +69,8 @@ async def lifespan(app: FastAPI):
 
     # 2. Shutdown
     logger.info("Closing clients...")
-    await neo4j_client.close()
+    await vectordb_client.close()
+    await graphdb_client.close()
     await redis_client.close()
     await llm_client.close()
     await embed_client.close()

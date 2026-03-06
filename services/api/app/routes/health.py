@@ -1,9 +1,20 @@
 # services/api/app/routes/health.py
 from fastapi import APIRouter, Response, status
 from app.cache.redis import redis_client
-from app.clients.neo4j import neo4j_client
 
 router = APIRouter()
+
+# Late-initialised — set by main.py lifespan
+_graphdb_client = None
+_vectordb_client = None
+
+
+def set_clients(vectordb, graphdb):
+    """Called once during app startup to inject abstracted clients."""
+    global _graphdb_client, _vectordb_client
+    _graphdb_client = graphdb
+    _vectordb_client = vectordb
+
 
 @router.get("/liveness")
 async def liveness():
@@ -13,14 +24,15 @@ async def liveness():
     """
     return {"status": "ok"}
 
+
 @router.get("/readiness")
 async def readiness(response: Response):
     """
     K8s Readiness Probe.
-    Checks connections to critical dependencies (Redis, DB).
+    Checks connections to critical dependencies (Redis, VectorDB, GraphDB).
     If this fails, K8s stops sending traffic to this pod.
     """
-    status_report = {"redis": "down", "neo4j": "down"}
+    status_report = {"redis": "down", "vectordb": "down", "graphdb": "down"}
     is_healthy = True
 
     # 1. Check Redis
@@ -31,17 +43,31 @@ async def readiness(response: Response):
     except Exception:
         is_healthy = False
 
-    # 2. Check Neo4j (Connectivity only)
+    # 2. Check VectorDB (connectivity)
     try:
-        # Driver is singleton, check if initialized
-        if neo4j_client._driver:
-            status_report["neo4j"] = "up"
+        if _vectordb_client and _vectordb_client.client:
+            status_report["vectordb"] = "up"
         else:
-             is_healthy = False
+            is_healthy = False
+    except Exception:
+        is_healthy = False
+
+    # 3. Check GraphDB (connectivity)
+    try:
+        if _graphdb_client and hasattr(_graphdb_client, "is_connected"):
+            if _graphdb_client.is_connected:
+                status_report["graphdb"] = "up"
+            else:
+                is_healthy = False
+        elif _graphdb_client:
+            # NullGraphClient is always "up"
+            status_report["graphdb"] = "up"
+        else:
+            is_healthy = False
     except Exception:
         is_healthy = False
 
     if not is_healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
     return status_report

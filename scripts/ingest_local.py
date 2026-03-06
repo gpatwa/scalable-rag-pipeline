@@ -199,8 +199,8 @@ async def embed_texts(texts: list[str], concurrency: int = 10) -> list[list[floa
 
 
 # ── Qdrant upsert ────────────────────────────────────────────────────────────
-def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: str):
-    """Insert chunk vectors into Qdrant in batches."""
+def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: str, tenant_id: str = "default"):
+    """Insert chunk vectors into Qdrant in batches, tagged with tenant_id."""
     from qdrant_client import QdrantClient
     from qdrant_client.http import models
 
@@ -213,6 +213,7 @@ def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: st
             payload={
                 "text": chunk,
                 "metadata": {"filename": filename, "chunk_index": i},
+                "tenant_id": tenant_id,
             },
         )
         for i, (chunk, emb) in enumerate(zip(chunks, embeddings))
@@ -223,11 +224,11 @@ def upsert_qdrant(chunks: list[str], embeddings: list[list[float]], filename: st
     for i in range(0, len(points), batch_size):
         batch = points[i : i + batch_size]
         client.upsert(collection_name=settings.QDRANT_COLLECTION, points=batch)
-    logger.info(f"  ✅ Qdrant: upserted {len(points)} vectors")
+    logger.info(f"  ✅ Qdrant: upserted {len(points)} vectors (tenant={tenant_id})")
 
 
 # ── Neo4j entities ───────────────────────────────────────────────────────────
-async def create_neo4j_entities(text: str, filename: str):
+async def create_neo4j_entities(text: str, filename: str, tenant_id: str = "default"):
     """
     Extract simple entity triples using the LLM, then MERGE into Neo4j.
     Falls back to inserting the document as a single node if extraction fails.
@@ -282,8 +283,8 @@ async def create_neo4j_entities(text: str, filename: str):
             try:
                 session.run(
                     """
-                    MERGE (s:Entity {name: $subject})
-                    MERGE (o:Entity {name: $object})
+                    MERGE (s:Entity {name: $subject, tenant_id: $tenant_id})
+                    MERGE (o:Entity {name: $object, tenant_id: $tenant_id})
                     MERGE (s)-[r:RELATES {type: $predicate}]->(o)
                     SET r.source = $filename
                     """,
@@ -291,6 +292,7 @@ async def create_neo4j_entities(text: str, filename: str):
                     object=str(t.get("object", "")),
                     predicate=str(t.get("predicate", "")),
                     filename=filename,
+                    tenant_id=tenant_id,
                 )
             except Exception as e:
                 logger.warning(f"  ⚠️  Neo4j merge failed for triple: {e}")
@@ -299,12 +301,12 @@ async def create_neo4j_entities(text: str, filename: str):
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
-async def ingest_document(text: str, filename: str):
+async def ingest_document(text: str, filename: str, tenant_id: str = "default"):
     if not text or not text.strip():
         logger.warning(f"  ⚠️  Skipping {filename} — empty content")
         return
 
-    logger.info(f"\n📄 Ingesting: {filename} ({len(text)} chars)")
+    logger.info(f"\n📄 Ingesting: {filename} ({len(text)} chars, tenant={tenant_id})")
 
     # 1. Chunk
     chunks = chunk_text(text)
@@ -314,12 +316,12 @@ async def ingest_document(text: str, filename: str):
     logger.info(f"  Embedding {len(chunks)} chunks via Ollama...")
     embeddings = await embed_texts(chunks)
 
-    # 3. Upsert to Qdrant
-    upsert_qdrant(chunks, embeddings, filename)
+    # 3. Upsert to Qdrant (tagged with tenant_id)
+    upsert_qdrant(chunks, embeddings, filename, tenant_id=tenant_id)
 
     # 4. Extract entities → Neo4j
     logger.info("  Extracting entities via LLM...")
-    await create_neo4j_entities(text, filename)
+    await create_neo4j_entities(text, filename, tenant_id=tenant_id)
 
 
 def collect_files(path: str) -> list[str]:
@@ -354,14 +356,16 @@ async def main():
     )
     parser.add_argument("path", nargs="?", help="Path to a file (.txt/.md/.pdf/.docx) or directory")
     parser.add_argument("--sample", action="store_true", help="Ingest built-in sample data")
+    parser.add_argument("--tenant-id", default="default", help="Tenant ID to tag data with (default: 'default')")
     args = parser.parse_args()
+    tenant_id = args.tenant_id
 
     if args.sample:
         logger.info("=" * 55)
-        logger.info("  Ingesting sample documents...")
+        logger.info(f"  Ingesting sample documents (tenant={tenant_id})...")
         logger.info("=" * 55)
         for doc in SAMPLE_DOCUMENTS:
-            await ingest_document(doc["text"], doc["filename"])
+            await ingest_document(doc["text"], doc["filename"], tenant_id=tenant_id)
     elif args.path:
         files = collect_files(args.path)
         if not files:
@@ -370,12 +374,12 @@ async def main():
             sys.exit(1)
 
         logger.info("=" * 55)
-        logger.info(f"  Ingesting {len(files)} file(s)...")
+        logger.info(f"  Ingesting {len(files)} file(s) (tenant={tenant_id})...")
         logger.info("=" * 55)
         for filepath in files:
             try:
                 text = parse_file(filepath)
-                await ingest_document(text, os.path.basename(filepath))
+                await ingest_document(text, os.path.basename(filepath), tenant_id=tenant_id)
             except Exception as e:
                 logger.error(f"  ❌ Failed to process {filepath}: {e}")
     else:
