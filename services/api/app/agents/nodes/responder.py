@@ -1,6 +1,6 @@
 # services/api/app/agents/nodes/responder.py
-from services.api.app.agents.state import AgentState
-from services.api.app.clients.ray_llm import llm_client
+from app.agents.state import AgentState
+from app.clients.ray_llm import llm_client
 
 async def generate_node(state: AgentState) -> dict:
     """

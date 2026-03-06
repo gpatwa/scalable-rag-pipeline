@@ -1,6 +1,6 @@
 # services/api/app/clients/qdrant.py
 from qdrant_client import QdrantClient, AsyncQdrantClient
-from services.api.app.config import settings
+from app.config import settings
 
 class VectorDBClient:
     """

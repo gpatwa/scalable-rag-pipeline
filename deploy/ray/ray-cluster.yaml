@@ -21,9 +21,12 @@ spec:
 
     template:
       spec:
+        # Head node doesn't need GPU — use multi-arch image (amd64 + arm64)
+        nodeSelector:
+          kubernetes.io/arch: amd64
         containers:
         - name: ray-head
-          image: rayproject/ray:2.9.0-py310-gpu
+          image: rayproject/ray:2.9.0-py310
           resources:
             # Dev: 1 CPU / 4Gi (prod: 2 CPU / 8Gi)
             limits:
@@ -78,14 +81,15 @@ spec:
         - name: ray-worker
           image: rayproject/ray:2.9.0-py310-gpu
           resources:
-            # Dev: 4 CPU / 16Gi (prod: 4 CPU / 32Gi)
+            # Dev: sized for g5.xlarge (4 vCPU, 16GB RAM, 1x A10G)
+            # Prod: increase to 4 CPU / 32Gi for g5.4xlarge with 70B model
             limits:
-              cpu: "4"
-              memory: "16Gi"
-              nvidia.com/gpu: 1 # Request 1 GPU per pod
+              cpu: "3"
+              memory: "14Gi"
+              nvidia.com/gpu: 1
             requests:
-              cpu: "4"
-              memory: "16Gi"
+              cpu: "2"
+              memory: "10Gi"
               nvidia.com/gpu: 1
         # Node Selector: Tells Karpenter to use GPU nodes
         nodeSelector:

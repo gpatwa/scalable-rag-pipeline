@@ -1,10 +1,10 @@
 # services/api/app/agents/nodes/retriever.py
 import asyncio
 from typing import Dict, List
-from services.api.app.agents.state import AgentState
-from services.api.app.clients.qdrant import qdrant_client
-from services.api.app.clients.neo4j import neo4j_client
-from services.api.app.clients.ray_embed import embed_client # To be implemented
+from app.agents.state import AgentState
+from app.clients.qdrant import qdrant_client
+from app.clients.neo4j import neo4j_client
+from app.clients.ray_embed import embed_client # To be implemented
 import logging
 
 logger = logging.getLogger(__name__)

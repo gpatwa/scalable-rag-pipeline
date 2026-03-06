@@ -17,9 +17,12 @@ spec:
         num-cpus: '0'
       template:
         spec:
+          # Head node doesn't need GPU — use multi-arch image (amd64 + arm64)
+          nodeSelector:
+            kubernetes.io/arch: amd64
           containers:
           - name: ray-head
-            image: rayproject/ray:2.9.0-py310-gpu
+            image: rayproject/ray:2.9.0-py310
             resources:
               limits:
                 cpu: "2"
@@ -32,7 +35,7 @@ spec:
             - containerPort: 8265
     workerGroupSpecs:
     - groupName: gpu-workers
-      replicas: 1 
+      replicas: 0  # Scale-to-zero: Ray autoscaler provisions on demand
       minReplicas: 0
       maxReplicas: 1
       rayStartParams: {}
@@ -42,13 +45,15 @@ spec:
           - name: ray-worker
             image: rayproject/ray:2.9.0-py310-gpu
             resources:
+              # Dev: sized for g5.xlarge (4 vCPU, 16GB RAM, 1x A10G 24GB VRAM)
+              # BGE-M3 embedding model needs ~2GB VRAM
               limits:
-                cpu: "4"
-                memory: "32Gi"
+                cpu: "3"
+                memory: "14Gi"
                 nvidia.com/gpu: 1
               requests:
-                cpu: "4"
-                memory: "32Gi"
+                cpu: "2"
+                memory: "8Gi"
                 nvidia.com/gpu: 1
           nodeSelector:
             karpenter.k8s.aws/instance-category: "g"

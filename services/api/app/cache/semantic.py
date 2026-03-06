@@ -2,9 +2,9 @@
 import json
 import logging
 from typing import Optional
-from services.api.app.clients.ray_embed import embed_client
-from services.api.app.clients.qdrant import qdrant_client
-from services.api.app.config import settings
+from app.clients.ray_embed import embed_client
+from app.clients.qdrant import qdrant_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

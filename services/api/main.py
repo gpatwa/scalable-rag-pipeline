@@ -6,12 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
-from services.api.app.clients.neo4j import neo4j_client
-from services.api.app.clients.ray_llm import llm_client
-from services.api.app.clients.ray_embed import embed_client
-from services.api.app.cache.redis import redis_client
-from services.api.app.routes import chat, upload, health, auth
-from services.api.app.config import settings
+from app.clients.neo4j import neo4j_client
+from app.clients.ray_llm import llm_client
+from app.clients.ray_embed import embed_client
+from app.cache.redis import redis_client
+from app.routes import chat, upload, health, auth
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
     # Wire up OpenTelemetry observability (tracing + auto-instrumentation)
     try:
-        from services.api.app.observability import setup_observability
+        from app.observability import setup_observability
         setup_observability(app)
         logger.info("Observability instrumented")
     except Exception as e:

@@ -1,6 +1,6 @@
 # services/api/app/cache/redis.py
 import redis.asyncio as redis
-from services.api.app.config import settings
+from app.config import settings
 
 class RedisClient:
     """

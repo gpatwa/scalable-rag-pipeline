@@ -1,6 +1,6 @@
 # services/api/app/tools/graph_search.py
-from services.api.app.clients.neo4j import neo4j_client
-from services.api.app.clients.ray_llm import llm_client
+from app.clients.neo4j import neo4j_client
+from app.clients.ray_llm import llm_client
 import json
 
 SYSTEM_PROMPT = """

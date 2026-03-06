@@ -1,6 +1,6 @@
 # services/api/app/tools/vector_search.py
-from services.api.app.clients.qdrant import qdrant_client
-from services.api.app.clients.ray_embed import embed_client
+from app.clients.qdrant import qdrant_client
+from app.clients.ray_embed import embed_client
 
 async def search_vector_tool(query: str) -> str:
     """

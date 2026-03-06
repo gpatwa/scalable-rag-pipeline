@@ -1,9 +1,9 @@
 # services/api/app/agents/nodes/tool.py
 import logging
-from services.api.app.agents.state import AgentState
-from services.api.app.tools.calculator import calculate
-from services.api.app.tools.graph_search import search_graph_tool
-# from services.api.app.tools.web_search import web_search (Future)
+from app.agents.state import AgentState
+from app.tools.calculator import calculate
+from app.tools.graph_search import search_graph_tool
+# from app.tools.web_search import web_search (Future)
 
 logger = logging.getLogger(__name__)
 

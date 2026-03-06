@@ -33,8 +33,6 @@ spec:
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 30s
-  # Terminate empty nodes after 5 minutes (key for cost savings)
-  expireAfter: 720h  # Force node refresh every 30 days
 
 ---
 # NodePool for GPU workloads (Ray Serve LLM/Embedding inference)
@@ -47,16 +45,17 @@ spec:
   template:
     spec:
       requirements:
-        # g5.xlarge: 1x A10G GPU, 4 vCPU, 16GB RAM (~$0.60/hr SPOT)
+        # Dev: g5.xlarge (1x A10G 24GB, 4 vCPU, 16GB RAM, ~$0.60/hr SPOT)
+        # 8B model AWQ ~4.5GB VRAM + BGE-M3 ~2GB = fits easily on A10G 24GB
         - key: karpenter.k8s.aws/instance-family
           operator: In
-          values: ["g5"]
+          values: ["g5", "g4dn"]
         - key: karpenter.k8s.aws/instance-size
           operator: In
-          values: ["xlarge", "2xlarge"]  # Cap instance size for dev budget
+          values: ["xlarge", "2xlarge"]  # Dev: xlarge enough for 8B model
         - key: karpenter.sh/capacity-type
           operator: In
-          values: ["spot"]  # SPOT for GPU = massive savings
+          values: ["spot", "on-demand"]  # Fallback to on-demand if no SPOT
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
@@ -69,12 +68,11 @@ spec:
         - key: nvidia.com/gpu
           effect: NoSchedule
   limits:
-    cpu: "8"          # Dev cap: max 2 GPU nodes (prod: increase as needed)
-    memory: "32Gi"
+    cpu: "16"         # Dev cap: 2x g5.xlarge (4 vCPU each) or 1x g5.2xlarge (8 vCPU)
+    memory: "64Gi"
   disruption:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 30s  # Terminate GPU node 30s after last pod exits
-  expireAfter: 720h
 
 ---
 # EC2NodeClass for general nodes
@@ -83,6 +81,7 @@ kind: EC2NodeClass
 metadata:
   name: default
 spec:
+  role: rag-platform-cluster-karpenter-node-20260305224103429100000017
   amiSelectorTerms:
     - alias: al2023@latest  # Amazon Linux 2023 (latest EKS-optimized AMI)
   subnetSelectorTerms:
@@ -105,6 +104,7 @@ kind: EC2NodeClass
 metadata:
   name: gpu
 spec:
+  role: rag-platform-cluster-karpenter-node-20260305224103429100000017
   amiSelectorTerms:
     - alias: al2023@latest  # EKS-optimized AMI with GPU drivers
   subnetSelectorTerms:

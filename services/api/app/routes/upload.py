@@ -2,8 +2,8 @@
 import boto3
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from services.api.app.config import settings
-from services.api.app.auth.jwt import get_current_user # Assume auth exists
+from app.config import settings
+from app.auth.jwt import get_current_user # Assume auth exists
 import uuid
 
 router = APIRouter()

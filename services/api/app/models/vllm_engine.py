@@ -7,16 +7,18 @@ import os
 @serve.deployment(autoscaling_config={"min_replicas": 1, "max_replicas": 10}, ray_actor_options={"num_gpus": 1})
 class VLLMDeployment:
     def __init__(self):
-        model_id = os.getenv("MODEL_ID", "meta-llama/Meta-Llama-3-70B-Instruct")
-        
+        # Dev: 8B model (~4.5GB VRAM AWQ, fits on g5.xlarge A10G 24GB)
+        # Prod: swap to "meta-llama/Meta-Llama-3-70B-Instruct" on g5.12xlarge (4x A10G)
+        model_id = os.getenv("MODEL_ID", "meta-llama/Meta-Llama-3-8B-Instruct")
+
         # 1. Load Tokenizer for correct chat formatting
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-        
+
         args = EngineArgs(
             model=model_id,
-            quantization="awq",
-            gpu_memory_utilization=0.90,
-            max_model_len=8192
+            quantization=os.getenv("QUANTIZATION", "awq"),
+            gpu_memory_utilization=0.85,
+            max_model_len=4096  # Dev: 4K context (prod: 8192 for 70B)
         )
         self.engine = AsyncLLMEngine.from_engine_args(args)
 

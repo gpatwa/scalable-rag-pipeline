@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
-from services.api.app.memory.postgres import AsyncSessionLocal
-from services.api.app.auth.jwt import get_current_user
+from app.memory.postgres import AsyncSessionLocal
+from app.auth.jwt import get_current_user
 
 router = APIRouter()
 

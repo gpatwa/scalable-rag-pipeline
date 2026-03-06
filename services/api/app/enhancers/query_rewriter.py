@@ -1,6 +1,6 @@
 # services/api/app/enhancers/query_rewriter.py
 from typing import List, Dict
-from services.api.app.clients.ray_llm import llm_client
+from app.clients.ray_llm import llm_client
 
 SYSTEM_PROMPT = """
 You are a Query Rewriter. 

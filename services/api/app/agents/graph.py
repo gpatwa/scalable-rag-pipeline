@@ -1,9 +1,9 @@
 # services/api/app/agents/graph.py
 from langgraph.graph import StateGraph, END
-from services.api.app.agents.state import AgentState
-from services.api.app.agents.nodes.retriever import retrieve_node
-from services.api.app.agents.nodes.responder import generate_node
-from services.api.app.agents.nodes.planner import planner_node
+from app.agents.state import AgentState
+from app.agents.nodes.retriever import retrieve_node
+from app.agents.nodes.responder import generate_node
+from app.agents.nodes.planner import planner_node
 
 # Initialize the Graph
 workflow = StateGraph(AgentState)

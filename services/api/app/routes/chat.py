@@ -8,13 +8,13 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from services.api.app.auth.jwt import get_current_user
+from app.auth.jwt import get_current_user
 # Import classes for type hinting
-from services.api.app.cache.semantic import SemanticCache, semantic_cache as global_cache
-from services.api.app.memory.postgres import PostgresMemory, postgres_memory as global_memory
-from services.api.app.clients.ray_llm import RayLLMClient, llm_client as global_llm
-from services.api.app.agents.graph import agent_app
-from services.api.app.agents.state import AgentState
+from app.cache.semantic import SemanticCache, semantic_cache as global_cache
+from app.memory.postgres import PostgresMemory, postgres_memory as global_memory
+from app.clients.ray_llm import RayLLMClient, llm_client as global_llm
+from app.agents.graph import agent_app
+from app.agents.state import AgentState
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

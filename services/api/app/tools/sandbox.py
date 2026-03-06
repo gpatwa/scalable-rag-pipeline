@@ -1,6 +1,6 @@
 # services/api/app/tools/sandbox.py
 import httpx
-from services.api.app.config import settings
+from app.config import settings
 
 # Helper to find the Sandbox Service in K8s
 SANDBOX_URL = "http://sandbox-service:8080/execute"

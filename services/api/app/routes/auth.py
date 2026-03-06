@@ -5,8 +5,8 @@ In production, tokens would be issued by an external IdP (Cognito, Auth0, etc.).
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from services.api.app.config import settings
-from services.api.app.auth.jwt import create_token
+from app.config import settings
+from app.auth.jwt import create_token
 
 router = APIRouter()
 

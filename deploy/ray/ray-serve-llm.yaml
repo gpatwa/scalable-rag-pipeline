@@ -17,9 +17,12 @@ spec:
         num-cpus: '0'
       template:
         spec:
+          # Head node doesn't need GPU — use multi-arch image (amd64 + arm64)
+          nodeSelector:
+            kubernetes.io/arch: amd64
           containers:
           - name: ray-head
-            image: rayproject/ray:2.9.0-py310-gpu
+            image: rayproject/ray:2.9.0-py310
             resources:
               limits:
                 cpu: "2"
@@ -32,7 +35,7 @@ spec:
             - containerPort: 8265
     workerGroupSpecs:
     - groupName: gpu-workers
-      replicas: 1  # Changed to 1 so it actually provisions a GPU immediately
+      replicas: 0  # Scale-to-zero: Ray autoscaler provisions on demand
       minReplicas: 0
       maxReplicas: 1
       rayStartParams: {}
@@ -42,13 +45,14 @@ spec:
           - name: ray-worker
             image: rayproject/ray:2.9.0-py310-gpu
             resources:
+              # Dev: sized for g5.xlarge (4 vCPU, 16GB RAM, 1x A10G 24GB VRAM)
               limits:
-                cpu: "4"
-                memory: "32Gi"
+                cpu: "3"
+                memory: "14Gi"
                 nvidia.com/gpu: 1
               requests:
-                cpu: "4"
-                memory: "32Gi"
+                cpu: "2"
+                memory: "10Gi"
                 nvidia.com/gpu: 1
           nodeSelector:
             karpenter.k8s.aws/instance-category: "g"
@@ -57,7 +61,7 @@ spec:
             operator: "Exists"
             effect: "NoSchedule"
 
-  # 2. THE SERVE CONFIG (The original vLLM logic)
+  # 2. THE SERVE CONFIG (vLLM with 8B model for dev)
   serveConfigV2: |
     applications:
       - name: llama3
@@ -66,7 +70,7 @@ spec:
         runtime_env:
           pip: ["vllm==0.3.0", "torch==2.1.2"]
           env_vars:
-            MODEL_ID: "meta-llama/Meta-Llama-3-70B-Instruct"
+            MODEL_ID: "meta-llama/Meta-Llama-3-8B-Instruct"
         deployments:
           - name: VLLMDeployment
             autoscaling_config:
@@ -74,9 +78,9 @@ spec:
               max_replicas: 1
               target_num_ongoing_requests_per_replica: 20
             ray_actor_options:
-              num_cpus: 4
+              num_cpus: 2
               num_gpus: 1
             user_config:
-              max_model_len: 8192 
-              max_num_seqs: 128
+              max_model_len: 4096
+              max_num_seqs: 64
               quantization: "awq"

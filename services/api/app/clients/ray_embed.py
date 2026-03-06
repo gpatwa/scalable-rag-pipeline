@@ -3,7 +3,7 @@ import httpx
 import logging
 import backoff
 from typing import Optional
-from services.api.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
