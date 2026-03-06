@@ -48,5 +48,8 @@ class RayLLMClient:
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
 
-# Global Instance (Managed by Lifespan in main.py)
-llm_client = RayLLMClient()
+# Global Instance — created via factory based on LLM_PROVIDER env var.
+# Consumers import `llm_client` from this module; the factory decides
+# whether it's a RayLLMClient, OpenAILLMClient, etc.
+from app.clients.factory import create_llm_client as _create_llm
+llm_client = _create_llm(settings.LLM_PROVIDER)

@@ -55,4 +55,8 @@ class RayEmbedClient:
             embeddings.append(response.json()["embedding"])
         return embeddings
 
-embed_client = RayEmbedClient()
+# Global Instance — created via factory based on EMBED_PROVIDER env var.
+# Consumers import `embed_client` from this module; the factory decides
+# whether it's a RayEmbedClient, OpenAIEmbedClient, etc.
+from app.clients.factory import create_embed_client as _create_embed
+embed_client = _create_embed(settings.EMBED_PROVIDER)

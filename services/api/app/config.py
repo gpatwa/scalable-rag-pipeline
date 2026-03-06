@@ -34,10 +34,20 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     
-    # LLM / Embeddings
+    # LLM / Embeddings — Provider Selection
+    LLM_PROVIDER: str = "ray"       # "ray" (self-hosted vLLM) | "openai" (API)
+    EMBED_PROVIDER: str = "ray"     # "ray" (self-hosted BGE)  | "openai" (API)
+
+    # Ray/vLLM endpoints (used when provider = "ray")
     RAY_LLM_ENDPOINT: str = "http://llm-service:8000/llm"
     RAY_EMBED_ENDPOINT: str = "http://embed-service:8000/embed"
     LLM_MODEL: str = "llama3"  # Model name for Ollama / vLLM
+
+    # OpenAI (used when provider = "openai"; also works with Azure/compatible APIs)
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None       # Set for Azure or compatible APIs
+    OPENAI_MODEL: str = "gpt-4o-mini"           # Cheap default for dev
+    OPENAI_EMBED_MODEL: str = "text-embedding-3-small"  # 1536 dims
     
     # Security
     JWT_SECRET_KEY: str
