@@ -323,7 +323,7 @@ async function init() {
     setTimeout(() => controller.abort(), 5000);
     const healthRes = await fetch(`${API_BASE}/health/readiness`, { signal: controller.signal });
     const health = await healthRes.json();
-    const allUp = health.redis === 'up' && health.neo4j === 'up';
+    const allUp = health.redis === 'up' && health.graphdb === 'up';
     if (!allUp) {
       label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
     }
