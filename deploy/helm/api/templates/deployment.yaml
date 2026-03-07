@@ -14,12 +14,24 @@ spec:
     metadata:
       labels:
         app: api
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       # Security: Run as non-root user (matches Dockerfile USER appuser uid 1000)
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+      {{- if .Values.serviceAccount }}
+      {{- if .Values.serviceAccount.name }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -30,7 +42,14 @@ spec:
               protocol: TCP
           envFrom:
             - secretRef:
-                name: app-env-secret # Pulls database passwords from ExternalSecrets
+                name: {{ .Values.secretRef | default "app-env-secret" }}
+          {{- with .Values.env }}
+          env:
+            {{- range $key, $value := . }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
           # Startup Probe: Allows slow startup (e.g., loading models)
           # Checks every 5s, up to 30 attempts = 150s max startup time
           startupProbe:

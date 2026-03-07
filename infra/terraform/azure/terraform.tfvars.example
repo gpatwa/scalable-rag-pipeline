@@ -1,0 +1,11 @@
+# infra/terraform/azure/terraform.tfvars.example
+# Copy this to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars to git — it contains secrets.
+
+db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+
+# Optional overrides:
+# location           = "eastus"
+# cluster_name       = "rag-platform-aks"
+# acr_name           = "ragplatformacr"    # Must be globally unique, alphanumeric only
+# environment        = "prod"

@@ -1,6 +1,7 @@
 # Makefile
 
-.PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test
+.PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
+       deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure
 
 help:
 	@echo "RAG Platform Commands:"
@@ -25,8 +26,17 @@ help:
 	@echo "    make smoke-test    - Run smoke tests only"
 	@echo "    make destroy       - Tear down ALL AWS resources"
 	@echo ""
+	@echo "  Azure Deployment:"
+	@echo "    make deploy-azure      - Full deploy: Terraform + Build + Bootstrap (first time)"
+	@echo "    make infra-azure       - Apply Azure Terraform only"
+	@echo "    make build-azure       - Build & push Docker image to ACR"
+	@echo "    make bootstrap-azure   - Bootstrap AKS cluster (K8s resources)"
+	@echo "    make deploy-api-azure  - Helm upgrade API only (code changes)"
+	@echo "    make destroy-azure     - Tear down ALL Azure resources"
+	@echo ""
 	@echo "  Quick start (local):  make install && make up && make init && make dev"
 	@echo "  Quick start (AWS):    make deploy-aws && make verify"
+	@echo "  Quick start (Azure):  make deploy-azure"
 
 # ============================================================
 # LOCAL DEVELOPMENT
@@ -94,6 +104,40 @@ verify:
 smoke-test:
 	./scripts/smoke_test.sh
 
-# Destroy ALL cloud resources (requires confirmation)
+# Destroy ALL AWS cloud resources (requires confirmation)
 destroy:
 	./scripts/cleanup.sh
+
+# ============================================================
+# AZURE DEPLOYMENT
+# ============================================================
+
+# Full Azure deployment (first time): Terraform + Docker + AKS bootstrap
+deploy-azure:
+	./scripts/deploy_azure.sh
+
+# Azure Terraform only: provision VNet, AKS, PostgreSQL, Redis, Storage, ACR
+infra-azure:
+	cd infra/terraform/azure && terraform init -upgrade && terraform apply
+
+# Build Docker image and push to ACR
+build-azure:
+	CLOUD_PROVIDER=azure ./scripts/build_push.sh
+
+# Bootstrap AKS cluster: KubeRay, Qdrant, Neo4j, Ingress, API
+bootstrap-azure:
+	./scripts/bootstrap_cluster_azure.sh
+
+# Helm upgrade API only on AKS (for code changes after initial deploy)
+deploy-api-azure:
+	@ACR_NAME=$${ACR_NAME:-ragplatformacr}; \
+	TAG=$$(git rev-parse --short HEAD 2>/dev/null || echo "v0.1.0"); \
+	helm upgrade --install api deploy/helm/api \
+		-f deploy/helm/api/values-azure.yaml \
+		--set image.repository="$${ACR_NAME}.azurecr.io/rag-backend-api" \
+		--set image.tag="$${TAG}" \
+		--namespace default
+
+# Destroy ALL Azure cloud resources (requires confirmation)
+destroy-azure:
+	./scripts/cleanup_azure.sh

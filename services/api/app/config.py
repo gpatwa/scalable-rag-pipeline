@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     # Tenant Configuration
     TENANT_CONFIG_SOURCE: str = "static"  # "static" | "database" | "redis"
 
+    # Secrets Management — Provider Selection
+    SECRETS_PROVIDER: str = "env"  # "env" | "aws_sm" | "azure_kv"
+    SECRETS_PREFIX: str = ""  # Prefix for secret names (e.g. "rag-platform/prod/")
+    AZURE_KEY_VAULT_URL: Optional[str] = None  # e.g. https://my-vault.vault.azure.net
+
+    # Observability — Cloud-specific exporter
+    OTEL_EXPORTER: str = "otlp"  # "otlp" | "xray" | "azure_monitor" | "none"
+    OTEL_SERVICE_NAME: str = "rag-api-service"
+    OTEL_ENDPOINT: Optional[str] = None  # OTLP collector endpoint
+    AZURE_MONITOR_CONNECTION_STRING: Optional[str] = None  # Azure App Insights
+
     # CORS (comma-separated origins, e.g., "http://localhost:3000,https://your-domain.com")
     CORS_ORIGINS: str = "*"  # Default: allow all for dev. Restrict in production!
 

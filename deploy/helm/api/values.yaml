@@ -14,6 +14,24 @@ service:
   type: ClusterIP
   port: 8080
 
+# Kubernetes Secret to mount as envFrom (configurable per cloud)
+secretRef: app-env-secret
+
+# Service Account (disabled by default for local dev)
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+
+# Pod labels (e.g. Azure Workload Identity)
+podLabels: {}
+
+# Tolerations (e.g. Azure Spot node pools)
+tolerations: []
+
+# Extra environment variables (merged into container env)
+env: {}
+
 resources:
   requests:
     cpu: 500m

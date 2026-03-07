@@ -10,6 +10,7 @@ from app.clients.ray_llm import llm_client
 from app.clients.ray_embed import embed_client
 from app.clients.vectordb.factory import create_vectordb_client
 from app.clients.graphdb.factory import create_graphdb_client
+from app.clients.secrets.factory import create_secrets_client
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
@@ -19,9 +20,15 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create VectorDB and GraphDB clients via provider factories
+# Create VectorDB, GraphDB, and Secrets clients via provider factories
 vectordb_client = create_vectordb_client(settings.VECTORDB_PROVIDER)
 graphdb_client = create_graphdb_client(settings.GRAPHDB_PROVIDER)
+secrets_client = create_secrets_client(
+    settings.SECRETS_PROVIDER,
+    region=settings.AWS_REGION,
+    prefix=settings.SECRETS_PREFIX,
+    vault_url=settings.AZURE_KEY_VAULT_URL,
+)
 
 
 @asynccontextmanager
@@ -32,6 +39,10 @@ async def lifespan(app: FastAPI):
     """
     # 1. Startup
     logger.info("Initializing clients...")
+
+    # Secrets client — available for runtime secret lookups
+    # (Primary secrets like DATABASE_URL are still injected via env/K8s secrets)
+    logger.info(f"Secrets provider: {settings.SECRETS_PROVIDER}")
 
     # Core clients
     await redis_client.connect()
@@ -69,6 +80,7 @@ async def lifespan(app: FastAPI):
 
     # 2. Shutdown
     logger.info("Closing clients...")
+    await secrets_client.close()
     await vectordb_client.close()
     await graphdb_client.close()
     await redis_client.close()

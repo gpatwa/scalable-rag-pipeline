@@ -1,0 +1,61 @@
+# deploy/helm/api/values-azure.yaml
+# Azure Helm overrides for the RAG API.
+# Usage: helm upgrade --install api deploy/helm/api -f deploy/helm/api/values-azure.yaml
+#
+# These values override the base values.yaml for Azure deployments.
+# Key differences from AWS:
+#   - Image pulled from ACR (not ECR)
+#   - Secrets from Azure Key Vault (not AWS Secrets Manager)
+#   - Workload Identity annotations (not IRSA annotations)
+#   - Tolerations for Azure Spot node pools
+
+replicaCount: 1  # Dev: 1 replica (prod: 2+ for HA)
+
+image:
+  # Azure Container Registry URI — set ACR_NAME and TAG at deploy time:
+  #   --set image.repository=<ACR_NAME>.azurecr.io/rag-backend-api
+  #   --set image.tag=<TAG>
+  repository: ragplatformacr.azurecr.io/rag-backend-api
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Azure-specific: Tolerate Spot node pools
+tolerations:
+  - key: "kubernetes.azure.com/scalesetpriority"
+    operator: "Equal"
+    value: "spot"
+    effect: "NoSchedule"
+
+# Azure-specific: Workload Identity annotations for the service account
+serviceAccount:
+  create: true
+  name: api-sa
+  annotations:
+    # Set API_IDENTITY_CLIENT_ID from terraform output:
+    #   --set serviceAccount.annotations."azure\.workload\.identity/client-id"=<CLIENT_ID>
+    azure.workload.identity/client-id: ""
+
+# Azure-specific pod label required for Workload Identity
+podLabels:
+  azure.workload.identity/use: "true"
+
+# Environment variables specific to Azure deployment
+env:
+  CLOUD_PROVIDER: "azure"
+  STORAGE_PROVIDER: "azure_blob"
+  VECTORDB_PROVIDER: "qdrant"
+  GRAPHDB_PROVIDER: "neo4j"
+  LLM_PROVIDER: "openai"
+  EMBED_PROVIDER: "openai"

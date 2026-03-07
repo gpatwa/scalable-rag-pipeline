@@ -1,0 +1,175 @@
+# .github/workflows/deploy.yml
+# Cloud Deployment — Build, push, and deploy to AWS or Azure.
+# Triggered manually via workflow_dispatch with cloud selection.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider to deploy to"
+        required: true
+        type: choice
+        options:
+          - aws
+          - azure
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      skip_infra:
+        description: "Skip Terraform (code-only deploy)"
+        type: boolean
+        default: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ──────────────────────────────────────────────────
+  # Job 1: Run Tests
+  # ──────────────────────────────────────────────────
+  test:
+    name: Pre-deploy Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run tests
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///test.db"
+          REDIS_URL: "redis://localhost:6379/0"
+          JWT_SECRET_KEY: "ci-test-secret-key-not-for-production"
+          S3_BUCKET_NAME: "test-bucket"
+          NEO4J_PASSWORD: "testpass"
+        run: pytest tests/ -v --tb=short
+
+  # ──────────────────────────────────────────────────
+  # Job 2a: Deploy to AWS
+  # ──────────────────────────────────────────────────
+  deploy-aws:
+    name: Deploy to AWS (EKS)
+    runs-on: ubuntu-latest
+    needs: test
+    if: inputs.cloud == 'aws'
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
+          docker push $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name rag-platform-cluster --region us-east-1
+
+      - name: Helm Deploy
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          helm upgrade --install api deploy/helm/api \
+            --set image.repository=$ECR_REGISTRY/rag-backend-api \
+            --set image.tag=$IMAGE_TAG \
+            --namespace default \
+            --wait --timeout 180s
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/api-deployment --timeout=120s
+          kubectl get pods -l app=api
+
+  # ──────────────────────────────────────────────────
+  # Job 2b: Deploy to Azure
+  # ──────────────────────────────────────────────────
+  deploy-azure:
+    name: Deploy to Azure (AKS)
+    runs-on: ubuntu-latest
+    needs: test
+    if: inputs.cloud == 'azure'
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Build & Push Docker Image
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
+          docker push $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Helm Deploy
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          helm upgrade --install api deploy/helm/api \
+            -f deploy/helm/api/values-azure.yaml \
+            --set image.repository=$ACR_REGISTRY/rag-backend-api \
+            --set image.tag=$IMAGE_TAG \
+            --set serviceAccount.annotations."azure\.workload\.identity/client-id"="${{ secrets.API_IDENTITY_CLIENT_ID }}" \
+            --namespace default \
+            --wait --timeout 180s
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/api-deployment --timeout=120s
+          kubectl get pods -l app=api
