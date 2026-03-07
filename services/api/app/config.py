@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # AWS S3 / MinIO (Documents)
     AWS_REGION: str = "us-east-1"
-    S3_BUCKET_NAME: str
+    S3_BUCKET_NAME: Optional[str] = None   # Required only when STORAGE_PROVIDER=s3
     S3_ENDPOINT_URL: Optional[str] = None  # Set to MinIO URL for local dev
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None

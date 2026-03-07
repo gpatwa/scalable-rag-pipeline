@@ -18,7 +18,7 @@ resource "azurerm_subnet" "aks" {
   name                 = "aks-subnet"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.1.0/22"] # 1022 IPs — enough for pods + nodes
+  address_prefixes     = ["10.0.0.0/22"] # 1022 IPs — enough for pods + nodes
 }
 
 # Database Subnet — PostgreSQL Flexible Server requires a delegated subnet
@@ -76,7 +76,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "5432"
-    source_address_prefix      = "10.0.1.0/22"
+    source_address_prefix      = "10.0.0.0/22"
     destination_address_prefix = "*"
   }
 
@@ -89,7 +89,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "6380"
-    source_address_prefix      = "10.0.1.0/22"
+    source_address_prefix      = "10.0.0.0/22"
     destination_address_prefix = "*"
   }
 }

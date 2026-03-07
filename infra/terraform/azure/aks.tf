@@ -8,7 +8,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix          = var.cluster_name
-  kubernetes_version  = var.kubernetes_version
+  kubernetes_version  = "1.32"
 
   # System node pool — runs CoreDNS, metrics-server, etc.
   default_node_pool {
@@ -17,19 +17,16 @@ resource "azurerm_kubernetes_cluster" "aks" {
     node_count           = 1
     min_count            = 1
     max_count            = 2
-    auto_scaling_enabled = true
+    enable_auto_scaling = true
     os_disk_size_gb      = 30
     vnet_subnet_id       = azurerm_subnet.aks.id
 
-    # Taint system nodes so app pods don't schedule here
-    node_taints = ["CriticalAddonsOnly=true:NoSchedule"]
+    # Note: AKS API no longer allows custom taints on the default node pool.
+    # Use the app node pool for workloads and keep system pool for cluster addons.
 
     node_labels = {
       "nodepool" = "system"
     }
-
-    # Spot pricing is not available on the default pool — use regular VMs
-    # (Azure requires at least one non-spot pool as default)
   }
 
   # Managed Identity (replaces AWS IRSA with Azure Workload Identity)
@@ -60,23 +57,18 @@ resource "azurerm_kubernetes_cluster" "aks" {
 resource "azurerm_kubernetes_cluster_node_pool" "app" {
   name                  = "app"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.aks.id
-  vm_size               = "Standard_B2s" # Dev: burstable (prod: Standard_D4s_v5+)
+  vm_size               = "Standard_B2s_v2" # Dev: burstable v2 (prod: Standard_D4s_v5+)
   node_count            = 1
   min_count             = 1
   max_count             = 3
-  auto_scaling_enabled  = true
+  enable_auto_scaling   = true
   os_disk_size_gb       = 30
   vnet_subnet_id        = azurerm_subnet.aks.id
-  priority              = "Spot" # Spot VMs for dev cost savings (~70% cheaper)
-  eviction_policy       = "Delete"
-  spot_max_price        = -1 # Pay up to on-demand price
+  priority              = "Regular" # Regular VMs (Spot has capacity issues in eastus)
 
   node_labels = {
-    "nodepool"                              = "app"
-    "kubernetes.azure.com/scalesetpriority" = "spot"
+    "nodepool" = "app"
   }
-
-  node_taints = ["kubernetes.azure.com/scalesetpriority=spot:NoSchedule"]
 
   tags = {
     Project     = "Enterprise-RAG"

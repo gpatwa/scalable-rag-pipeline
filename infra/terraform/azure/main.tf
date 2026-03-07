@@ -26,11 +26,11 @@ terraform {
 
   # REMOTE STATE STORAGE (Azure Storage Account)
   # Create this manually once before running terraform init:
-  #   az storage account create -n ragterraformstate -g rag-platform-tfstate -l eastus --sku Standard_LRS
-  #   az storage container create -n tfstate --account-name ragterraformstate
+  #   az storage account create -n ragterraformstategp -g terraform-state-rg -l eastus --sku Standard_LRS
+  #   az storage container create -n tfstate --account-name ragterraformstategp
   backend "azurerm" {
-    resource_group_name  = "rag-platform-tfstate"
-    storage_account_name = "ragterraformstate"
+    resource_group_name  = "terraform-state-rg"
+    storage_account_name = "ragterraformstategp"
     container_name       = "tfstate"
     key                  = "platform/terraform.tfstate"
   }
