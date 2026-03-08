@@ -18,6 +18,8 @@ build/
 .env.production
 *.tfvars
 !*.tfvars.example
+!infra/terraform/envs/*.tfvars
+!infra/terraform/azure/envs/*.tfvars
 
 # ============================================================
 # Terraform

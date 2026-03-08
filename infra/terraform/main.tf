@@ -24,20 +24,20 @@ terraform {
   # REMOTE STATE STORAGE (Industry Standard)
   # This saves the infrastructure state to S3 so multiple engineers can work safely.
   # Note: You must create this bucket manually once before running terraform init.
+  # Per-environment state isolation — set key at init time:
+  #   terraform init -backend-config="key=staging/terraform.tfstate" -backend-config="profile=rag-staging"
+  #   terraform init -backend-config="key=prod/terraform.tfstate"    -backend-config="profile=rag-prod"
   backend "s3" {
-    bucket         = "rag-platform-terraform-state-prod-1" # Unique bucket name
-    key            = "platform/terraform.tfstate"            # Path inside bucket
-    region         = "us-east-1"                             # AWS Region
-    profile        = "rag-prod"                              # Shared AWS CLI profile for backend auth
-    encrypt        = true                                    # Encrypt state at rest
-    use_lockfile   = true                                    # Enables state locking via lockfile
+    bucket       = "rag-platform-terraform-state-prod-1"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 
 # Configure the AWS Provider
 provider "aws" {
-  region  = var.aws_region
-  profile = "rag-prod"
+  region = var.aws_region
 
   # Apply default tags to ALL resources for cost tracking (FinOps)
   default_tags {

@@ -1,0 +1,20 @@
+# deploy/helm/api/values-staging.yaml
+# Staging environment overrides — lightweight, debug-friendly.
+# Usage: helm upgrade --install api deploy/helm/api -f values-azure.yaml -f values-staging.yaml
+
+replicaCount: 1
+
+image:
+  pullPolicy: Always  # Always pull to get latest staging build
+
+env:
+  ENV: "staging"
+  LOG_LEVEL: "DEBUG"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

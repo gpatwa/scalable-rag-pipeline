@@ -1,0 +1,20 @@
+# deploy/helm/api/values-prod.yaml
+# Production environment overrides — HA, resource-optimized, minimal logging.
+# Usage: helm upgrade --install api deploy/helm/api -f values-azure.yaml -f values-prod.yaml
+
+replicaCount: 2
+
+image:
+  pullPolicy: IfNotPresent
+
+env:
+  ENV: "prod"
+  LOG_LEVEL: "WARNING"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

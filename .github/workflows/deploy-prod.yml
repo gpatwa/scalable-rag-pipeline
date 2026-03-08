@@ -1,80 +1,34 @@
-# .github/workflows/deploy.yml
-# DEPRECATED: Use deploy-staging.yml (auto on push to main) and
-# deploy-prod.yml (manual with approval) instead.
-# Kept for backward compatibility — will be removed in a future release.
-name: Deploy (Legacy)
+# .github/workflows/deploy-prod.yml
+# Production deploy — manual trigger with environment approval gate.
+name: Deploy Production
 
 on:
   workflow_dispatch:
     inputs:
       cloud:
-        description: "Cloud provider to deploy to"
+        description: "Cloud provider"
         required: true
         type: choice
         options:
           - aws
           - azure
-      environment:
-        description: "Target environment"
+      image_tag:
+        description: "Image tag to promote (staging-<sha> from deploy-staging)"
         required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
-        default: dev
-      skip_infra:
-        description: "Skip Terraform (code-only deploy)"
-        type: boolean
-        default: true
+        type: string
 
 env:
   PYTHON_VERSION: "3.11"
 
 jobs:
   # ──────────────────────────────────────────────────
-  # Job 1: Run Tests
-  # ──────────────────────────────────────────────────
-  test:
-    name: Pre-deploy Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/api
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: services/api/requirements.txt
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio
-
-      - name: Run tests
-        env:
-          DATABASE_URL: "sqlite+aiosqlite:///test.db"
-          REDIS_URL: "redis://localhost:6379/0"
-          JWT_SECRET_KEY: "ci-test-secret-key-not-for-production"
-          S3_BUCKET_NAME: "test-bucket"
-          NEO4J_PASSWORD: "testpass"
-        run: pytest tests/ -v --tb=short
-
-  # ──────────────────────────────────────────────────
-  # Job 2a: Deploy to AWS
+  # Job 1: Deploy to AWS Production
   # ──────────────────────────────────────────────────
   deploy-aws:
-    name: Deploy to AWS (EKS)
+    name: AWS Production
     runs-on: ubuntu-latest
-    needs: test
     if: inputs.cloud == 'aws'
-    environment: ${{ inputs.environment }}
+    environment: production  # Requires approval via GitHub Environment protection rules
     permissions:
       id-token: write
       contents: read
@@ -90,13 +44,16 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image
+      - name: Retag for production
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+          SOURCE_TAG: ${{ inputs.image_tag }}
+          PROD_TAG: prod-${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
-          docker push $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG
+          docker pull $ECR_REGISTRY/rag-backend-api:$SOURCE_TAG
+          docker tag $ECR_REGISTRY/rag-backend-api:$SOURCE_TAG \
+            $ECR_REGISTRY/rag-backend-api:$PROD_TAG
+          docker push $ECR_REGISTRY/rag-backend-api:$PROD_TAG
 
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name rag-platform-cluster --region us-east-1
@@ -104,28 +61,28 @@ jobs:
       - name: Helm Deploy
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+          PROD_TAG: prod-${{ github.sha }}
         run: |
           helm upgrade --install api deploy/helm/api \
+            -f deploy/helm/api/values-prod.yaml \
             --set image.repository=$ECR_REGISTRY/rag-backend-api \
-            --set image.tag=$IMAGE_TAG \
+            --set image.tag=$PROD_TAG \
             --namespace default \
-            --wait --timeout 180s
+            --wait --timeout 300s
 
-      - name: Verify Deployment
+      - name: Verify
         run: |
-          kubectl rollout status deployment/api-deployment --timeout=120s
+          kubectl rollout status deployment/api-deployment --timeout=180s
           kubectl get pods -l app=api
 
   # ──────────────────────────────────────────────────
-  # Job 2b: Deploy to Azure
+  # Job 2: Deploy to Azure Production
   # ──────────────────────────────────────────────────
   deploy-azure:
-    name: Deploy to Azure (AKS)
+    name: Azure Production
     runs-on: ubuntu-latest
-    needs: test
     if: inputs.cloud == 'azure'
-    environment: ${{ inputs.environment }}
+    environment: production  # Requires approval via GitHub Environment protection rules
     permissions:
       id-token: write
       contents: read
@@ -139,16 +96,17 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Login to ACR
-        run: az acr login --name ${{ secrets.ACR_NAME }}
-
-      - name: Build & Push Docker Image
+      - name: Retag for production
         env:
           ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
-          IMAGE_TAG: ${{ github.sha }}
+          SOURCE_TAG: ${{ inputs.image_tag }}
+          PROD_TAG: prod-${{ github.sha }}
         run: |
-          docker build -t $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
-          docker push $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG
+          az acr login --name ${{ secrets.ACR_NAME }}
+          docker pull $ACR_REGISTRY/rag-backend-api:$SOURCE_TAG
+          docker tag $ACR_REGISTRY/rag-backend-api:$SOURCE_TAG \
+            $ACR_REGISTRY/rag-backend-api:$PROD_TAG
+          docker push $ACR_REGISTRY/rag-backend-api:$PROD_TAG
 
       - name: Get AKS Credentials
         run: |
@@ -160,17 +118,18 @@ jobs:
       - name: Helm Deploy
         env:
           ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
-          IMAGE_TAG: ${{ github.sha }}
+          PROD_TAG: prod-${{ github.sha }}
         run: |
           helm upgrade --install api deploy/helm/api \
             -f deploy/helm/api/values-azure.yaml \
+            -f deploy/helm/api/values-prod.yaml \
             --set image.repository=$ACR_REGISTRY/rag-backend-api \
-            --set image.tag=$IMAGE_TAG \
+            --set image.tag=$PROD_TAG \
             --set serviceAccount.annotations."azure\.workload\.identity/client-id"="${{ secrets.API_IDENTITY_CLIENT_ID }}" \
             --namespace default \
-            --wait --timeout 180s
+            --wait --timeout 300s
 
-      - name: Verify Deployment
+      - name: Verify
         run: |
-          kubectl rollout status deployment/api-deployment --timeout=120s
+          kubectl rollout status deployment/api-deployment --timeout=180s
           kubectl get pods -l app=api

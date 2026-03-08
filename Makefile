@@ -1,7 +1,8 @@
 # Makefile
 
 .PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
-       deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure
+       deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
+       setup lint format
 
 help:
 	@echo "RAG Platform Commands:"
@@ -34,7 +35,12 @@ help:
 	@echo "    make deploy-api-azure  - Helm upgrade API only (code changes)"
 	@echo "    make destroy-azure     - Tear down ALL Azure resources"
 	@echo ""
-	@echo "  Quick start (local):  make install && make up && make init && make dev"
+	@echo "  Developer Setup:"
+	@echo "    make setup         - Install deps + pre-commit hooks"
+	@echo "    make lint          - Run ruff linter"
+	@echo "    make format        - Auto-fix lint + format code"
+	@echo ""
+	@echo "  Quick start (local):  make setup && make up && make init && make dev"
 	@echo "  Quick start (AWS):    make deploy-aws && make verify"
 	@echo "  Quick start (Azure):  make deploy-azure"
 
@@ -42,8 +48,19 @@ help:
 # LOCAL DEVELOPMENT
 # ============================================================
 
+setup:
+	pip install pre-commit && pre-commit install
+	pip install -r services/api/requirements.txt
+	pip install pytest pytest-asyncio ruff
+
 install:
 	pip install -r services/api/requirements.txt
+
+lint:
+	ruff check
+
+format:
+	ruff check --fix && ruff format
 
 up:
 	docker compose up -d
@@ -61,7 +78,7 @@ dev:
 	uvicorn services.api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 
 test:
-	pytest tests/
+	pytest
 
 # ============================================================
 # AWS DEPLOYMENT

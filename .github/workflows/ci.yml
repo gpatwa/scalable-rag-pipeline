@@ -38,7 +38,8 @@ jobs:
           pip install pytest pytest-asyncio ruff
 
       - name: Lint (ruff)
-        run: ruff check app/ tests/ --output-format=github
+        working-directory: .
+        run: ruff check --output-format=github
 
       - name: Run tests
         env:

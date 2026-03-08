@@ -1,39 +1,23 @@
-# .github/workflows/deploy.yml
-# DEPRECATED: Use deploy-staging.yml (auto on push to main) and
-# deploy-prod.yml (manual with approval) instead.
-# Kept for backward compatibility — will be removed in a future release.
-name: Deploy (Legacy)
+# .github/workflows/deploy-staging.yml
+# Auto-deploys to staging on every push to main (after CI passes).
+name: Deploy Staging
 
 on:
-  workflow_dispatch:
-    inputs:
-      cloud:
-        description: "Cloud provider to deploy to"
-        required: true
-        type: choice
-        options:
-          - aws
-          - azure
-      environment:
-        description: "Target environment"
-        required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
-        default: dev
-      skip_infra:
-        description: "Skip Terraform (code-only deploy)"
-        type: boolean
-        default: true
+  push:
+    branches: [main]
 
 env:
   PYTHON_VERSION: "3.11"
+  ENVIRONMENT: staging
+
+# Only one staging deploy at a time
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
 
 jobs:
   # ──────────────────────────────────────────────────
-  # Job 1: Run Tests
+  # Job 1: Quick smoke test before deploying
   # ──────────────────────────────────────────────────
   test:
     name: Pre-deploy Tests
@@ -67,14 +51,14 @@ jobs:
         run: pytest tests/ -v --tb=short
 
   # ──────────────────────────────────────────────────
-  # Job 2a: Deploy to AWS
+  # Job 2a: Deploy to AWS Staging
   # ──────────────────────────────────────────────────
   deploy-aws:
-    name: Deploy to AWS (EKS)
+    name: AWS Staging
     runs-on: ubuntu-latest
     needs: test
-    if: inputs.cloud == 'aws'
-    environment: ${{ inputs.environment }}
+    if: vars.CLOUD_PROVIDER == 'aws'
+    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -90,42 +74,44 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image
+      - name: Build & Push
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: staging-${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
+          docker build -t $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG \
+            -f services/api/Dockerfile services/api
           docker push $ECR_REGISTRY/rag-backend-api:$IMAGE_TAG
 
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name rag-platform-cluster --region us-east-1
+        run: aws eks update-kubeconfig --name rag-platform-staging --region us-east-1
 
       - name: Helm Deploy
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: staging-${{ github.sha }}
         run: |
           helm upgrade --install api deploy/helm/api \
+            -f deploy/helm/api/values-staging.yaml \
             --set image.repository=$ECR_REGISTRY/rag-backend-api \
             --set image.tag=$IMAGE_TAG \
             --namespace default \
             --wait --timeout 180s
 
-      - name: Verify Deployment
+      - name: Verify
         run: |
           kubectl rollout status deployment/api-deployment --timeout=120s
           kubectl get pods -l app=api
 
   # ──────────────────────────────────────────────────
-  # Job 2b: Deploy to Azure
+  # Job 2b: Deploy to Azure Staging
   # ──────────────────────────────────────────────────
   deploy-azure:
-    name: Deploy to Azure (AKS)
+    name: Azure Staging
     runs-on: ubuntu-latest
     needs: test
-    if: inputs.cloud == 'azure'
-    environment: ${{ inputs.environment }}
+    if: vars.CLOUD_PROVIDER == 'azure'
+    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -139,38 +125,38 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Login to ACR
-        run: az acr login --name ${{ secrets.ACR_NAME }}
-
-      - name: Build & Push Docker Image
+      - name: Build & Push to ACR
         env:
           ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: staging-${{ github.sha }}
         run: |
-          docker build -t $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG -f services/api/Dockerfile .
+          az acr login --name ${{ secrets.ACR_NAME }}
+          docker build -t $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG \
+            -f services/api/Dockerfile services/api
           docker push $ACR_REGISTRY/rag-backend-api:$IMAGE_TAG
 
       - name: Get AKS Credentials
         run: |
           az aks get-credentials \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP_STAGING }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME_STAGING }} \
             --overwrite-existing
 
       - name: Helm Deploy
         env:
           ACR_REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: staging-${{ github.sha }}
         run: |
           helm upgrade --install api deploy/helm/api \
             -f deploy/helm/api/values-azure.yaml \
+            -f deploy/helm/api/values-staging.yaml \
             --set image.repository=$ACR_REGISTRY/rag-backend-api \
             --set image.tag=$IMAGE_TAG \
             --set serviceAccount.annotations."azure\.workload\.identity/client-id"="${{ secrets.API_IDENTITY_CLIENT_ID }}" \
             --namespace default \
             --wait --timeout 180s
 
-      - name: Verify Deployment
+      - name: Verify
         run: |
           kubectl rollout status deployment/api-deployment --timeout=120s
           kubectl get pods -l app=api

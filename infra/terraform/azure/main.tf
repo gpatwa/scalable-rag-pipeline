@@ -28,11 +28,13 @@ terraform {
   # Create this manually once before running terraform init:
   #   az storage account create -n ragterraformstategp -g terraform-state-rg -l eastus --sku Standard_LRS
   #   az storage container create -n tfstate --account-name ragterraformstategp
+  # Per-environment state isolation — set key at init time:
+  #   terraform init -backend-config="key=staging/terraform.tfstate"
+  #   terraform init -backend-config="key=prod/terraform.tfstate"
   backend "azurerm" {
     resource_group_name  = "terraform-state-rg"
     storage_account_name = "ragterraformstategp"
     container_name       = "tfstate"
-    key                  = "platform/terraform.tfstate"
   }
 }
 
