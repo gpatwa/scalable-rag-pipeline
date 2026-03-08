@@ -11,6 +11,7 @@ from app.clients.ray_embed import embed_client
 from app.clients.vectordb.factory import create_vectordb_client
 from app.clients.graphdb.factory import create_graphdb_client
 from app.clients.secrets.factory import create_secrets_client
+from app.clients.reranker.factory import create_reranker_client
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
@@ -20,7 +21,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create VectorDB, GraphDB, and Secrets clients via provider factories
+# Create VectorDB, GraphDB, Secrets, and Reranker clients via provider factories
 vectordb_client = create_vectordb_client(settings.VECTORDB_PROVIDER)
 graphdb_client = create_graphdb_client(settings.GRAPHDB_PROVIDER)
 secrets_client = create_secrets_client(
@@ -28,6 +29,10 @@ secrets_client = create_secrets_client(
     region=settings.AWS_REGION,
     prefix=settings.SECRETS_PREFIX,
     vault_url=settings.AZURE_KEY_VAULT_URL,
+)
+reranker_client = create_reranker_client(
+    settings.RERANKER_PROVIDER,
+    score_threshold=settings.RERANKER_SCORE_THRESHOLD,
 )
 
 
@@ -84,9 +89,13 @@ async def lifespan(app: FastAPI):
     await _inject_secrets_from_vault()
 
     # 2. Initialise Postgres engine (now that DB_PASSWORD is available)
-    from app.memory.postgres import init_engine
+    from app.memory.postgres import init_engine, engine, Base
     init_engine()
-    logger.info("Database engine initialised")
+    # Auto-create tables (chat_history, user_memories) if they don't exist
+    from app.memory.postgres import engine as db_engine
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database engine initialised, tables verified")
 
     # 3. Connect core clients
     await redis_client.connect()
@@ -103,8 +112,14 @@ async def lifespan(app: FastAPI):
     await vectordb_client.connect()
     await graphdb_client.connect()
 
+    # Re-ranker client
+    try:
+        await reranker_client.start()
+    except Exception as e:
+        logger.warning(f"Reranker client init skipped: {e}")
+
     # 4. Inject abstracted clients into modules that need them
-    set_retriever_clients(vectordb_client, graphdb_client)
+    set_retriever_clients(vectordb_client, graphdb_client, reranker_client)
     set_semantic_vectordb(vectordb_client)
     set_health_clients(vectordb_client, graphdb_client)
 
@@ -133,6 +148,7 @@ async def lifespan(app: FastAPI):
     await secrets_client.close()
     await vectordb_client.close()
     await graphdb_client.close()
+    await reranker_client.close()
     await redis_client.close()
     await llm_client.close()
     await embed_client.close()

@@ -15,7 +15,7 @@ class RayEmbedClient:
     """
     def __init__(self):
         self.endpoint = settings.RAY_EMBED_ENDPOINT
-        self.model = settings.LLM_MODEL
+        self.model = settings.EMBED_MODEL
         self.client: Optional[httpx.AsyncClient] = None
 
     async def start(self):

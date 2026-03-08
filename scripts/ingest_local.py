@@ -163,7 +163,7 @@ async def _embed_one(client, text: str, idx: int, semaphore) -> tuple[int, list[
     async with semaphore:
         resp = await client.post(
             settings.RAY_EMBED_ENDPOINT,
-            json={"model": settings.LLM_MODEL, "prompt": text},
+            json={"model": settings.EMBED_MODEL, "prompt": text},
         )
         resp.raise_for_status()
         return (idx, resp.json()["embedding"])
@@ -283,8 +283,10 @@ async def create_neo4j_entities(text: str, filename: str, tenant_id: str = "defa
             try:
                 session.run(
                     """
-                    MERGE (s:Entity {name: $subject, tenant_id: $tenant_id})
-                    MERGE (o:Entity {name: $object, tenant_id: $tenant_id})
+                    MERGE (s:Entity {name: $subject})
+                    SET s.tenant_id = $tenant_id
+                    MERGE (o:Entity {name: $object})
+                    SET o.tenant_id = $tenant_id
                     MERGE (s)-[r:RELATES {type: $predicate}]->(o)
                     SET r.source = $filename
                     """,

@@ -1,45 +1,60 @@
 # services/api/app/agents/nodes/tool.py
+import asyncio
 import logging
 from app.agents.state import AgentState
 from app.tools.calculator import calculate
 from app.tools.graph_search import search_graph_tool
-# from app.tools.web_search import web_search (Future)
+from app.tools.vector_search import search_vector_tool
+from app.tools.sandbox import run_python_code
+from app.tools.web_search import web_search_tool
 
 logger = logging.getLogger(__name__)
 
+# Dispatch table mapping tool names to their handler functions.
+# Sync tools (calculator) are wrapped in the execution logic below.
+TOOL_DISPATCH = {
+    "calculator": calculate,
+    "vector_search": search_vector_tool,
+    "graph_search": search_graph_tool,
+    "code_sandbox": run_python_code,
+    "web_search": web_search_tool,
+}
+
+
 async def tool_node(state: AgentState) -> dict:
     """
-    Executes the tool specified in the plan.
+    Executes the tool selected by the planner.
+    Reads tool_name and tool_input from state, dispatches to the
+    appropriate handler, and stores the result in tool_result.
     """
-    # Get the last message or plan to see what tool to call
-    # In a real implementation, the Planner outputs a structured tool call.
-    # Here we simplify based on the 'plan' field.
-    
-    plan_data = state.get("plan", [])
-    if not plan_data:
-        return {"messages": [{"role": "system", "content": "No tool selected."}]}
+    tool_name = state.get("tool_name", "")
+    tool_input = state.get("tool_input", "")
 
-    # Assume Planner passed specific instruction in state (simplified)
-    # Real implementations use OpenAI function calling API or JSON parsing
-    tool_name = state.get("tool_choice", "calculator") 
-    tool_input = state.get("tool_input", "0+0")
-    
-    result = ""
-    
-    if tool_name == "calculator":
-        logger.info(f"Executing Calculator: {tool_input}")
-        result = calculate(tool_input)
-        
-    elif tool_name == "graph_search":
-        logger.info(f"Executing Graph Search: {tool_input}")
-        result = await search_graph_tool(tool_input)
-        
+    if not tool_name:
+        logger.warning("Tool node called with no tool_name in state")
+        return {
+            "tool_result": "No tool was selected.",
+            "messages": [{"role": "assistant", "content": "[Tool] No tool was selected."}],
+        }
+
+    handler = TOOL_DISPATCH.get(tool_name)
+    if not handler:
+        logger.error(f"Unknown tool requested: {tool_name}")
+        result = f"Unknown tool: {tool_name}"
     else:
-        result = "Unknown tool requested."
+        logger.info(f"Executing tool: {tool_name} with input: {tool_input[:100]}")
+        try:
+            result = handler(tool_input)
+            # Handle both sync and async tool functions
+            if asyncio.iscoroutine(result):
+                result = await result
+        except Exception as e:
+            logger.error(f"Tool execution failed: {tool_name} — {e}")
+            result = f"Tool error ({tool_name}): {e}"
 
-    # Return the observation
+    logger.info(f"Tool {tool_name} completed, result length: {len(str(result))}")
+
     return {
-        "messages": [
-            {"role": "user", "content": f"Tool Output: {result}"}
-        ]
+        "tool_result": result,
+        "messages": [{"role": "assistant", "content": f"[Tool: {tool_name}] {result}"}],
     }

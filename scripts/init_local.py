@@ -15,12 +15,15 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "api"))
 
 
 # ── 1. Postgres ──────────────────────────────────────────────────────────────
 async def init_postgres():
     print("\n[1/4] Postgres — creating tables...")
-    from services.api.app.memory.postgres import Base, engine
+    from services.api.app.memory.postgres import Base, init_engine
+    init_engine()
+    from services.api.app.memory.postgres import engine
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -35,29 +38,71 @@ async def init_postgres():
 
 
 # ── 2. Qdrant ────────────────────────────────────────────────────────────────
+def _detect_embed_dim() -> int:
+    """
+    Auto-detect embedding dimensionality by sending a probe text
+    to the configured embed endpoint (Ollama / Ray Serve).
+
+    Falls back to 768 (nomic-embed-text default) if detection fails.
+    """
+    import httpx
+    from services.api.app.config import settings
+
+    print(f"  Detecting dimensions for model '{settings.EMBED_MODEL}'...")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                settings.RAY_EMBED_ENDPOINT,
+                json={"model": settings.EMBED_MODEL, "prompt": "dimension probe"},
+            )
+            resp.raise_for_status()
+            dim = len(resp.json()["embedding"])
+            print(f"  ✅ Detected dimension: {dim}")
+            return dim
+    except Exception as e:
+        print(f"  ⚠️  Auto-detect failed ({e}), defaulting to 768")
+        return 768
+
+
 def init_qdrant():
     print("\n[2/4] Qdrant — creating collections...")
     from qdrant_client import QdrantClient
     from qdrant_client.http import models
     from services.api.app.config import settings
 
-    VECTOR_DIM = 4096  # llama3 via Ollama
+    vector_dim = _detect_embed_dim()
 
     client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
     existing = [c.name for c in client.get_collections().collections]
 
     for name in [settings.QDRANT_COLLECTION, "semantic_cache"]:
         if name in existing:
-            print(f"  ⏭️  '{name}' already exists")
+            # Check if existing collection has matching dimensions
+            info = client.get_collection(name)
+            existing_dim = info.config.params.vectors.size
+            if existing_dim != vector_dim:
+                print(f"  ⚠️  '{name}' has dim={existing_dim}, need dim={vector_dim}")
+                print(f"      Recreating collection...")
+                client.delete_collection(collection_name=name)
+                client.create_collection(
+                    collection_name=name,
+                    vectors_config=models.VectorParams(
+                        size=vector_dim,
+                        distance=models.Distance.COSINE,
+                    ),
+                )
+                print(f"  ✅ Recreated '{name}' (dim={vector_dim}, cosine)")
+            else:
+                print(f"  ⏭️  '{name}' already exists (dim={existing_dim})")
         else:
             client.create_collection(
                 collection_name=name,
                 vectors_config=models.VectorParams(
-                    size=VECTOR_DIM,
+                    size=vector_dim,
                     distance=models.Distance.COSINE,
                 ),
             )
-            print(f"  ✅ Created '{name}' (dim={VECTOR_DIM}, cosine)")
+            print(f"  ✅ Created '{name}' (dim={vector_dim}, cosine)")
 
 
 # ── 3. Neo4j ─────────────────────────────────────────────────────────────────

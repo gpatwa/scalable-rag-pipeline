@@ -2,8 +2,6 @@
 import httpx
 from app.config import settings
 
-# Helper to find the Sandbox Service in K8s
-SANDBOX_URL = "http://sandbox-service:8080/execute"
 
 async def run_python_code(code: str) -> str:
     """
@@ -14,11 +12,11 @@ async def run_python_code(code: str) -> str:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                SANDBOX_URL,
+                settings.SANDBOX_URL,
                 json={"code": code, "timeout": 5},
                 timeout=6.0
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status") == "success":
@@ -27,6 +25,6 @@ async def run_python_code(code: str) -> str:
                     return f"Execution Error:\n{data['output']}"
             else:
                 return f"Sandbox Error: Status {response.status_code}"
-                
+
     except Exception as e:
         return f"Sandbox Connection Failed: {str(e)}"

@@ -141,7 +141,48 @@
   }
   .step-chip.done { background: rgba(78,201,155,0.12); color: var(--green); }
   .step-chip.active { background: rgba(230,160,64,0.12); color: var(--amber); }
+  .step-chip.retry { background: rgba(229,85,97,0.12); color: var(--red); }
   .step-chip .checkmark { font-size: 12px; }
+
+  /* ── Tool result card ────────────────────── */
+  .tool-result-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+  .tool-result-card .tool-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--amber);
+    margin-bottom: 4px;
+  }
+  .tool-result-card pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+
+  /* ── Eval badge ──────────────────────────── */
+  .eval-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    margin-top: 6px;
+  }
+  .eval-badge.good { background: rgba(78,201,155,0.12); color: var(--green); }
+  .eval-badge.poor { background: rgba(229,85,97,0.12); color: var(--red); }
 
   /* ── Source badges ──────────────────────── */
   .source-badge {
@@ -279,7 +320,7 @@
     <textarea id="user-input" rows="1" placeholder="Ask a question..." autofocus></textarea>
     <button id="send-btn" onclick="sendMessage()" title="Send">&#x27A4;</button>
   </div>
-  <div class="footer-text">Planner &rarr; Retriever (Qdrant + Neo4j) &rarr; Responder (Ollama) &mdash; Streaming NDJSON</div>
+  <div class="footer-text">Planner &rarr; Retriever / Tools / Multi-Step &rarr; Responder &rarr; Evaluator &mdash; Streaming NDJSON</div>
 </div>
 
 <script>
@@ -408,7 +449,6 @@ function handleEvent(event, stepsEl, contentEl) {
   if (event.type === 'status') {
     const name = event.node;
     if (name === '__end__') {
-      // Mark all as done
       stepsEl.querySelectorAll('.step-chip.active').forEach(el => {
         el.classList.remove('active');
         el.classList.add('done');
@@ -422,11 +462,43 @@ function handleEvent(event, stepsEl, contentEl) {
       el.classList.add('done');
       el.querySelector('.checkmark').textContent = '\u2713';
     });
-    // Add new step
+    // Add new step chip
+    const chip = document.createElement('span');
+    const isRetry = name === 'retry';
+    chip.className = `step-chip ${isRetry ? 'retry' : 'done'}`;
+    const icon = {
+      planner: '\u{1F9E0}', retriever: '\u{1F50D}', responder: '\u{2728}',
+      tool_node: '\u{1F527}', evaluator: '\u{1F50E}', retry: '\u{1F504}',
+      step_advance: '\u{27A1}'
+    }[name] || '\u2699';
+    chip.innerHTML = `${icon} ${name} <span class="checkmark">${isRetry ? '!' : '\u2713'}</span>`;
+    stepsEl.appendChild(chip);
+    scrollToBottom();
+  }
+
+  if (event.type === 'tool_result') {
+    const card = document.createElement('div');
+    card.className = 'tool-result-card';
+    card.innerHTML = `<div class="tool-label">\u{1F527} ${escapeHtml(event.tool_name || 'tool')}</div><pre>${escapeHtml(event.content || '')}</pre>`;
+    contentEl.parentElement.insertBefore(card, contentEl);
+    scrollToBottom();
+  }
+
+  if (event.type === 'evaluation') {
+    const score = event.score || 0;
+    if (score > 0) {
+      const badge = document.createElement('div');
+      badge.className = `eval-badge ${score >= 3 ? 'good' : 'poor'}`;
+      badge.textContent = `Quality: ${score}/5 \u2014 ${event.reasoning || ''}`;
+      contentEl.parentElement.appendChild(badge);
+      scrollToBottom();
+    }
+  }
+
+  if (event.type === 'step_progress') {
     const chip = document.createElement('span');
     chip.className = 'step-chip done';
-    const icon = { planner: '\u{1F9E0}', retriever: '\u{1F50D}', responder: '\u{2728}' }[name] || '\u2699';
-    chip.innerHTML = `${icon} ${name} <span class="checkmark">\u2713</span>`;
+    chip.innerHTML = `\u{27A1} step ${event.current_step + 1} <span class="checkmark">\u2713</span>`;
     stepsEl.appendChild(chip);
     scrollToBottom();
   }

@@ -108,7 +108,7 @@ def init_postgres(db_url: str):
 
     try:
         from sqlalchemy import create_engine
-        from services.api.app.models.db import Base
+        from services.api.app.memory.postgres import Base
 
         sync_url = db_url.replace("+asyncpg", "").replace("+aiopg", "")
         engine = create_engine(sync_url)

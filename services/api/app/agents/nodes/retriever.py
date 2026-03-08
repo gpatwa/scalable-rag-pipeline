@@ -16,28 +16,30 @@ DEFAULT_TENANT_ID = "default"
 # ------------------------------------------------------------------
 _vectordb_client = None
 _graphdb_client = None
+_reranker_client = None
 
 
-def set_clients(vectordb, graphdb):
+def set_clients(vectordb, graphdb, reranker=None):
     """Called once during app startup to inject abstracted clients."""
-    global _vectordb_client, _graphdb_client
+    global _vectordb_client, _graphdb_client, _reranker_client
     _vectordb_client = vectordb
     _graphdb_client = graphdb
+    _reranker_client = reranker
 
 
 async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
     """
-    Executes Hybrid Retrieval:
+    Executes Hybrid Retrieval with optional Re-ranking:
     1. Embeds the user query.
     2. Runs Vector Search AND Graph Search concurrently.
     3. Merges and deduplicates results.
+    4. Re-ranks merged results (if reranker is configured).
 
     Both searches are filtered by tenant_id from the LangGraph config
     to enforce cross-tenant data isolation.
 
-    Uses the provider-agnostic VectorDBClient and GraphDBClient
-    (set via set_clients() at startup), so the retriever works with
-    Qdrant, Azure AI Search, Neo4j, Cosmos DB, or none.
+    Uses the provider-agnostic VectorDBClient, GraphDBClient, and
+    RerankerClient (set via set_clients() at startup).
     """
     query = state["current_query"]
 
@@ -53,18 +55,27 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
     # Step 2: Define the tasks for Parallel Execution
 
     # Task A: Vector Search (Semantic Similarity) — filtered by tenant_id
+    # Fetch more candidates (15) to account for duplicates, then deduplicate
     async def run_vector_search():
         results = await _vectordb_client.search(
             collection=settings.QDRANT_COLLECTION,
             vector=query_vector,
-            limit=5,
+            limit=15,
             filters={"tenant_id": tenant_id},
         )
-        # results are plain dicts: {"id", "score", "payload"}
-        return [
-            f"{r['payload']['text']} [Source: {r['payload'].get('filename', r['payload'].get('metadata', {}).get('filename', 'unknown'))}]"
-            for r in results
-        ]
+        # Deduplicate by text content (duplicate ingestions create identical chunks)
+        seen_texts = set()
+        unique_docs = []
+        for r in results:
+            text = r['payload']['text']
+            if text not in seen_texts:
+                seen_texts.add(text)
+                filename = r['payload'].get('filename',
+                    r['payload'].get('metadata', {}).get('filename', 'unknown'))
+                unique_docs.append(f"{text} [Source: {filename}]")
+            if len(unique_docs) >= 8:
+                break
+        return unique_docs
 
     # Task B: Graph Search (Structural Relationships) — filtered by tenant_id
     async def run_graph_search():
@@ -81,10 +92,35 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
         run_vector_search(), run_graph_search()
     )
 
-    # Step 4: Merge and Deduplicate
-    combined_docs = list(set(vector_docs + graph_docs))
+    # Step 4: Merge (graph docs first for priority, then vector)
+    combined_docs = graph_docs + [d for d in vector_docs if d not in graph_docs]
 
-    logger.info(f"Retrieved {len(combined_docs)} documents (tenant={tenant_id}).")
+    logger.info(
+        f"Retrieved {len(combined_docs)} docs "
+        f"(vector={len(vector_docs)}, graph={len(graph_docs)}, tenant={tenant_id})"
+    )
+
+    # Step 5: Re-rank merged results (if reranker is configured)
+    if _reranker_client and combined_docs:
+        try:
+            scored_docs = await _reranker_client.rerank(
+                query=query, documents=combined_docs, top_k=8
+            )
+            reranked_docs = [sd.text for sd in scored_docs]
+
+            # Log re-ranking effect
+            logger.info(
+                f"Re-ranked {len(combined_docs)} → {len(reranked_docs)} docs "
+                f"(top score: {scored_docs[0].score:.2f})"
+            )
+            combined_docs = reranked_docs
+        except Exception as e:
+            logger.warning(f"Re-ranking failed ({e}), using original order")
+
+    if combined_docs:
+        logger.info(f"First doc preview: {combined_docs[0][:120]}...")
+    else:
+        logger.warning(f"No documents found for query: '{query}'")
 
     # Update State
     return {"documents": combined_docs}

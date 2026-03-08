@@ -1,7 +1,7 @@
 # services/api/app/memory/postgres.py
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, JSON, DateTime, Integer, Text, select, and_
+from sqlalchemy import Column, String, JSON, DateTime, Integer, Text, select, and_, func
 from datetime import datetime
 from app.config import settings
 
@@ -26,6 +26,19 @@ class ChatHistory(Base):
     content = Column(Text)                         # The text message
     metadata_ = Column(JSON, default={})           # Extra info (latency, tokens used)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserMemory(Base):
+    """Persistent cross-session memory for user preferences and facts."""
+    __tablename__ = "user_memories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), index=True, nullable=False)
+    tenant_id = Column(String(255), index=True, nullable=False, default=DEFAULT_TENANT_ID)
+    memory_type = Column(String(50), nullable=False)  # "preference" or "fact"
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # 3. Async Engine & Session
 #    The engine is lazily initialised so that secrets injected via
@@ -137,4 +150,128 @@ class PostgresMemory:
             return row.user_id == user_id and row.tenant_id == tenant_id
 
 
+    async def get_user_memories(
+        self,
+        user_id: str,
+        tenant_id: str = DEFAULT_TENANT_ID,
+        limit: int = 10,
+    ):
+        """Load persisted memories for a user (max 10, newest first)."""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(UserMemory)
+                .where(and_(
+                    UserMemory.user_id == user_id,
+                    UserMemory.tenant_id == tenant_id,
+                ))
+                .order_by(UserMemory.created_at.desc())
+                .limit(limit)
+            )
+            return result.scalars().all()
+
+    async def add_user_memory(
+        self,
+        user_id: str,
+        tenant_id: str,
+        memory_type: str,
+        content: str,
+    ):
+        """Store a new memory. Enforces max 10 per user by deleting the oldest."""
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                count_result = await session.execute(
+                    select(func.count(UserMemory.id))
+                    .where(and_(
+                        UserMemory.user_id == user_id,
+                        UserMemory.tenant_id == tenant_id,
+                    ))
+                )
+                count = count_result.scalar()
+
+                if count >= 10:
+                    oldest = await session.execute(
+                        select(UserMemory)
+                        .where(and_(
+                            UserMemory.user_id == user_id,
+                            UserMemory.tenant_id == tenant_id,
+                        ))
+                        .order_by(UserMemory.created_at.asc())
+                        .limit(1)
+                    )
+                    old_mem = oldest.scalars().first()
+                    if old_mem:
+                        await session.delete(old_mem)
+
+                session.add(UserMemory(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    memory_type=memory_type,
+                    content=content,
+                ))
+
+
 postgres_memory = PostgresMemory()
+
+
+# --- Long-term memory extraction (background task) ---
+
+import logging
+from app.agents.json_utils import extract_json
+
+logger = logging.getLogger(__name__)
+
+MEMORY_EXTRACT_PROMPT = """Analyze this conversation and extract any user preferences or important facts worth remembering for future conversations.
+
+Conversation:
+{conversation}
+
+If there are memorable items, output JSON:
+{{
+    "memories": [
+        {{"type": "preference", "content": "User prefers concise answers"}},
+        {{"type": "fact", "content": "Their fiscal year starts in April"}}
+    ]
+}}
+
+If nothing is worth remembering, output:
+{{"memories": []}}
+
+Only extract clear, explicit preferences or facts. Do not infer or guess."""
+
+
+async def extract_and_store_memories(
+    user_message: str,
+    assistant_message: str,
+    user_id: str,
+    tenant_id: str,
+):
+    """Background task: extract memories from the latest exchange."""
+    from app.clients.ray_llm import llm_client
+
+    conversation = f"User: {user_message}\nAssistant: {assistant_message}"
+
+    try:
+        response_text = await llm_client.chat_completion(
+            messages=[{
+                "role": "user",
+                "content": MEMORY_EXTRACT_PROMPT.format(conversation=conversation),
+            }],
+            temperature=0.0,
+        )
+        result = extract_json(response_text)
+        memories = result.get("memories", [])
+
+        memory_store = PostgresMemory()
+        for mem in memories:
+            await memory_store.add_user_memory(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                memory_type=mem.get("type", "fact"),
+                content=mem.get("content", ""),
+            )
+
+        if memories:
+            logger.info(f"Extracted {len(memories)} memories for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Memory extraction failed: {e}")

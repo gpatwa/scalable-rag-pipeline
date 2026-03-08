@@ -1,4 +1,5 @@
 # services/api/app/routes/chat.py
+import asyncio
 import uuid
 import json
 import logging
@@ -114,12 +115,30 @@ async def chat_stream(
     # Append current user message
     history_dicts.append({"role": "user", "content": req.message})
 
+    # 3b. Load Long-Term User Memories
+    memory_objs = await memory.get_user_memories(user_id, tenant_id)
+    user_memories = [
+        f"[{m.memory_type}] {m.content}" for m in memory_objs
+    ]
+
     # 4. Initialize Agent State (LangGraph)
     initial_state = AgentState(
         messages=history_dicts,
         current_query=req.message,
         documents=[],
-        plan=[]
+        plan=[],
+        action="",
+        tool_name="",
+        tool_input="",
+        tool_result="",
+        iteration_count=0,
+        plan_steps=[],
+        current_step_index=-1,
+        step_results=[],
+        eval_score=0,
+        eval_reasoning="",
+        retry_count=0,
+        user_memories=user_memories,
     )
 
     # 5. Define Generator for Streaming Response
@@ -153,6 +172,42 @@ async def chat_stream(
                     "info": f"Completed step: {node_name}"
                 }) + "\n"
 
+                # Stream tool execution results
+                if node_name == "tool_node":
+                    tool_result = node_data.get("tool_result", "")
+                    yield json.dumps({
+                        "type": "tool_result",
+                        "tool_name": node_data.get("tool_name", ""),
+                        "content": tool_result[:500],
+                        "session_id": session_id,
+                    }) + "\n"
+
+                # Stream evaluation results
+                if node_name == "evaluator":
+                    yield json.dumps({
+                        "type": "evaluation",
+                        "score": node_data.get("eval_score", 0),
+                        "reasoning": node_data.get("eval_reasoning", ""),
+                        "session_id": session_id,
+                    }) + "\n"
+
+                # Stream retry notification
+                if node_name == "retry":
+                    yield json.dumps({
+                        "type": "status",
+                        "node": "retry",
+                        "session_id": session_id,
+                        "info": "Answer quality below threshold, retrying with refined query...",
+                    }) + "\n"
+
+                # Stream multi-step progress
+                if node_name == "step_advance":
+                    yield json.dumps({
+                        "type": "step_progress",
+                        "current_step": node_data.get("current_step_index", 0),
+                        "session_id": session_id,
+                    }) + "\n"
+
                 # Capture Final Answer from Responder Node
                 if node_name == "responder":
                     # The responder node appends the final AI message to state['messages']
@@ -179,6 +234,14 @@ async def chat_stream(
 
                 # Update Cache
                 await cache.set_cached_response(req.message, final_answer, tenant_id=tenant_id)
+
+                # Extract long-term memories in background (non-blocking)
+                from app.memory.postgres import extract_and_store_memories
+                asyncio.create_task(
+                    extract_and_store_memories(
+                        req.message, final_answer, user_id, tenant_id
+                    )
+                )
 
         except Exception as e:
             logger.error(f"Error in chat stream: {e}", exc_info=True)

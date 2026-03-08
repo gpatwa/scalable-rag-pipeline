@@ -1,6 +1,7 @@
 # services/api/app/agents/state.py
-from typing import TypedDict, Annotated, List, Union
+from typing import TypedDict, Annotated, List
 import operator
+
 
 class AgentState(TypedDict):
     """
@@ -8,13 +9,37 @@ class AgentState(TypedDict):
     Tracks the conversation history and current step data.
     """
     # Using 'operator.add' means new messages are appended, not overwritten
-    messages: Annotated[List[dict], operator.add] 
-    
+    messages: Annotated[List[dict], operator.add]
+
     # Context retrieved from RAG (Vector + Graph)
-    documents: List[str] 
-    
+    documents: List[str]
+
     # The current question being processed
-    current_query: str 
-    
+    current_query: str
+
     # Internal scratchpad for the planner
     plan: List[str]
+
+    # Routing — set by planner, read by conditional edges
+    action: str  # "retrieve" | "direct_answer" | "tool_use"
+
+    # Tool execution — set by planner, consumed by tool_node
+    tool_name: str   # e.g. "calculator", "web_search"
+    tool_input: str  # parameter value for the selected tool
+    tool_result: str  # output from tool execution
+
+    # ReAct loop guard — prevents infinite tool loops
+    iteration_count: int
+
+    # Multi-step planning — decompose complex queries into sub-steps
+    plan_steps: List[dict]    # [{"action", "query", "tool_name", "tool_input"}]
+    current_step_index: int   # -1 = single-step mode, 0+ = executing step N
+    step_results: List[str]   # accumulated results from completed steps
+
+    # Self-evaluation — LLM scores answer quality, retry once if poor
+    eval_score: int           # 0 = not evaluated, 1-5 = quality score
+    eval_reasoning: str       # evaluator's explanation
+    retry_count: int          # max 1 retry
+
+    # Long-term memory — user preferences/facts from previous sessions
+    user_memories: List[str]  # loaded at session start

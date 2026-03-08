@@ -1,19 +1,23 @@
 # services/api/app/tools/web_search.py
 import httpx
-import os
+import logging
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
 
 async def web_search_tool(query: str) -> str:
     """
     Tool: Search the Internet.
     Use this for current events or public info not in the internal DB.
     """
-    api_key = os.getenv("TAVILY_API_KEY") # Or SERPAPI_KEY
+    api_key = settings.TAVILY_API_KEY
     if not api_key:
-        return "Web search is disabled (API Key missing)."
+        logger.warning("Web search disabled — TAVILY_API_KEY not set in config")
+        return "Web search is disabled (TAVILY_API_KEY not configured)."
 
     try:
         async with httpx.AsyncClient() as client:
-            # Example using Tavily AI Search (optimized for LLMs)
             response = await client.post(
                 "https://api.tavily.com/search",
                 json={
@@ -26,11 +30,11 @@ async def web_search_tool(query: str) -> str:
             )
             response.raise_for_status()
             data = response.json()
-            
+
             results = data.get("results", [])
             formatted = "\n".join([f"- {r['title']}: {r['content']} ({r['url']})" for r in results])
-            
+
             return formatted if formatted else "No results found on the web."
-            
+
     except Exception as e:
         return f"Web Search Error: {str(e)}"

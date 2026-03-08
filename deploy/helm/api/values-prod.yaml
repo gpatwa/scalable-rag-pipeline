@@ -10,6 +10,15 @@ image:
 env:
   ENV: "prod"
   LOG_LEVEL: "WARNING"
+  # Embedding — production model (BGE-M3 via Ray Serve or OpenAI)
+  EMBED_MODEL: "bge-m3"  # Or "text-embedding-3-small" if EMBED_PROVIDER=openai
+  # Re-ranking — cross-encoder via Ray Serve for best accuracy (~50ms)
+  RERANKER_PROVIDER: "cross_encoder"
+  RERANKER_SCORE_THRESHOLD: "0.3"
+  RERANKER_ENDPOINT: "http://reranker-service:8000/rerank"
+  # Agentic pipeline — tool endpoints
+  SANDBOX_URL: "http://sandbox-service:8080/execute"
+  # TAVILY_API_KEY: loaded from app-env-secret
 
 resources:
   requests:

@@ -75,7 +75,7 @@ init:
 	python3 scripts/init_local.py
 
 dev:
-	uvicorn services.api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
+	cd services/api && uvicorn main:app --reload --host 0.0.0.0 --port 8000 --env-file ../../.env
 
 test:
 	pytest

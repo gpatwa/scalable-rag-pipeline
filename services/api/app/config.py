@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     RAY_LLM_ENDPOINT: str = "http://llm-service:8000/llm"
     RAY_EMBED_ENDPOINT: str = "http://embed-service:8000/embed"
     LLM_MODEL: str = "llama3"  # Model name for Ollama / vLLM
+    EMBED_MODEL: str = "nomic-embed-text"  # Embedding model (separate from LLM)
 
     # OpenAI (used when provider = "openai"; also works with Azure/compatible APIs)
     OPENAI_API_KEY: Optional[str] = None
@@ -132,6 +133,19 @@ class Settings(BaseSettings):
     OTEL_SERVICE_NAME: str = "rag-api-service"
     OTEL_ENDPOINT: Optional[str] = None  # OTLP collector endpoint
     AZURE_MONITOR_CONNECTION_STRING: Optional[str] = None  # Azure App Insights
+
+    # -----------------------------------------------------------------
+    # Agentic Pipeline — Tool Configuration
+    # -----------------------------------------------------------------
+    TAVILY_API_KEY: Optional[str] = None  # Web search tool (tavily.com)
+    SANDBOX_URL: str = "http://sandbox-service:8080/execute"  # Code sandbox endpoint
+
+    # -----------------------------------------------------------------
+    # Re-ranking — Provider Selection
+    # -----------------------------------------------------------------
+    RERANKER_PROVIDER: str = "none"  # "llm" | "cross_encoder" | "none"
+    RERANKER_SCORE_THRESHOLD: float = 0.3  # Min score to keep (0.0-1.0)
+    RERANKER_ENDPOINT: str = "http://reranker-service:8000/rerank"  # cross_encoder only
 
     # CORS (comma-separated origins, e.g., "http://localhost:3000,https://your-domain.com")
     CORS_ORIGINS: str = "*"  # Default: allow all for dev. Restrict in production!

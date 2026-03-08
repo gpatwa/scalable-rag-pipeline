@@ -10,6 +10,14 @@ image:
 env:
   ENV: "staging"
   LOG_LEVEL: "DEBUG"
+  # Embedding — dedicated model (not the generative LLM)
+  EMBED_MODEL: "nomic-embed-text"
+  # Re-ranking — LLM-based scoring for staging (no extra infra needed)
+  RERANKER_PROVIDER: "llm"
+  RERANKER_SCORE_THRESHOLD: "0.3"
+  # Agentic pipeline — tool endpoints
+  SANDBOX_URL: "http://sandbox-service:8080/execute"
+  # TAVILY_API_KEY: loaded from app-env-secret
 
 resources:
   requests:
