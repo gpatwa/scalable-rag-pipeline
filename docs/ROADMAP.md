@@ -116,7 +116,143 @@ print(response.answer)
 
 ---
 
-## Phase 3 — Operational Maturity
+## Phase 3 — SaaS Data Connectors (Ingestion Framework)
+
+Priority: **High** | Effort: **2-3 weeks** | Blocks: enterprise data sources
+
+> **Decision:** Use **Airbyte (PyAirbyte)** for SaaS connector layer — not custom connectors.
+> Custom connectors for 10+ SaaS apps would be a full-time maintenance burden.
+> LlamaHub loaders lack incremental sync and managed auth for production use.
+
+### Current State
+
+The ingestion pipeline only supports **file-based** ingestion:
+- S3/Azure Blob uploads → Ray pipeline → Parse → Chunk → Embed → Index (Qdrant + Neo4j)
+- Formats: PDF, DOCX, HTML, TXT/MD
+- No SaaS API integration (Confluence, Slack, Jira, Google Drive, etc.)
+
+### Architecture: Airbyte + Existing Ray Pipeline
+
+```
+Tenant Admin UI: "Connect your Confluence"
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  Airbyte (PyAirbyte)                    │
+│  ┌───────────┐ ┌───────────┐ ┌───────┐ │
+│  │ Confluence│ │ Google    │ │ Slack │ │
+│  │ Connector │ │ Drive     │ │       │ │
+│  └─────┬─────┘ └─────┬─────┘ └───┬───┘ │
+│        │ OAuth + incremental sync │     │
+│        └──────────┬───────────────┘     │
+│                   ▼                     │
+│         Raw JSON / Documents            │
+└───────────────────┬─────────────────────┘
+                    ▼
+         S3 / Azure Blob (staging)
+         uploads/{tenant_id}/saas/{source}/{doc_id}
+                    │
+                    ▼ (existing pipeline — no changes needed)
+┌──────────────────────────────────────────┐
+│  Ray Ingestion Pipeline                  │
+│  Parse → Chunk → Embed → Index           │
+│  (Qdrant vectors + Neo4j graph)          │
+└──────────────────────────────────────────┘
+```
+
+### Why Airbyte
+
+| Requirement | Airbyte | Custom connectors | LlamaHub |
+|---|---|---|---|
+| SaaS connectors | 550+ (Confluence, Slack, Jira, Google Drive, SharePoint, Salesforce, Notion, HubSpot) | Build each one | 300+ but not production-grade |
+| OAuth management | Built-in per connector | You build it per SaaS | You manage tokens manually |
+| Incremental sync | Native cursor-based with state | You build state tracking | Not supported |
+| Rate limiting | Handled per connector | You implement per API | Basic / inconsistent |
+| Python integration | PyAirbyte — outputs DataFrames, streams to S3 | Native Python | Native Python |
+| Maintenance | Airbyte-managed connectors updated by vendor | You fix every API change | Community-maintained, variable quality |
+| License | Elastic License 2.0 (self-hostable) | N/A | MIT |
+| Cost | Free self-hosted, paid cloud | Engineering time (3-4x underestimated) | Free |
+
+### Implementation Plan
+
+#### 3.1 Connector Infrastructure
+- [ ] Add `pyairbyte` to `requirements-ingestion.txt`
+- [ ] Create `pipelines/ingestion/connectors/` module
+- [ ] Create `pipelines/ingestion/connectors/base.py` — `SaaSConnector` protocol:
+  ```python
+  class SaaSConnector(Protocol):
+      def sync(self, tenant_id: str, config: dict) -> Iterator[Document]: ...
+      def get_state(self, tenant_id: str) -> dict: ...
+      def set_state(self, tenant_id: str, state: dict) -> None: ...
+  ```
+- [ ] Create `pipelines/ingestion/connectors/airbyte_adapter.py` — wraps PyAirbyte:
+  - Accepts source name + config (e.g., `source-confluence`, `{"domain": "...", "api_token": "..."}`)
+  - Handles incremental sync via Airbyte state management
+  - Writes raw docs to S3/Blob staging path: `uploads/{tenant_id}/saas/{source}/{doc_id}`
+  - Triggers existing Ray ingestion pipeline on new files
+
+#### 3.2 Connector Configuration (per-tenant)
+- [ ] Add `tenant_connectors` table in Postgres:
+  ```sql
+  CREATE TABLE tenant_connectors (
+      id UUID PRIMARY KEY,
+      tenant_id VARCHAR NOT NULL,
+      source_type VARCHAR NOT NULL,     -- 'confluence', 'google_drive', 'slack'
+      config JSONB NOT NULL,            -- source-specific config (encrypted)
+      sync_state JSONB DEFAULT '{}',    -- Airbyte incremental sync cursor
+      schedule VARCHAR DEFAULT 'hourly', -- 'hourly', 'daily', 'manual'
+      enabled BOOLEAN DEFAULT TRUE,
+      last_sync_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+  ```
+- [ ] Store connector credentials in Key Vault / Secrets Manager (not in DB)
+- [ ] Reference secrets by Key Vault secret name in `config` JSONB
+
+#### 3.3 Admin API for Connectors
+- [ ] `POST /api/v1/admin/connectors` — register a SaaS connector for tenant
+- [ ] `GET /api/v1/admin/connectors` — list connectors for tenant
+- [ ] `PATCH /api/v1/admin/connectors/{id}` — update config, schedule, enable/disable
+- [ ] `POST /api/v1/admin/connectors/{id}/sync` — trigger manual sync
+- [ ] `GET /api/v1/admin/connectors/{id}/status` — last sync time, docs synced, errors
+
+#### 3.4 Sync Scheduler
+- [ ] Cron-based sync worker (Ray job or K8s CronJob):
+  - Query `tenant_connectors` where `enabled = true` and schedule matches
+  - Run Airbyte sync per connector
+  - Write new docs to S3/Blob staging
+  - Trigger Ray ingestion pipeline
+  - Update `sync_state` and `last_sync_at`
+- [ ] Webhook option: receive push events from SaaS apps (Confluence webhooks, Google Drive push notifications)
+
+#### 3.5 Priority Connectors (Phase 1)
+- [ ] **Confluence** — most requested for enterprise knowledge bases
+- [ ] **Google Drive** — docs, sheets, slides
+- [ ] **SharePoint / OneDrive** — Microsoft shops
+- [ ] **Notion** — popular for product/engineering docs
+- [ ] **Slack** — channel history for support/ops knowledge
+
+#### 3.6 Priority Connectors (Phase 2)
+- [ ] Jira (issue context for support RAG)
+- [ ] Salesforce (CRM knowledge)
+- [ ] HubSpot (marketing content)
+- [ ] GitHub (README, wiki, issues, PRs)
+- [ ] Zendesk (support tickets)
+
+### Alternatives Considered
+
+| Option | Verdict |
+|---|---|
+| **Custom connectors** | Rejected — 2-4 weeks per connector to build, ongoing maintenance as APIs change. Doesn't scale past 3-5 sources. |
+| **LlamaHub loaders** | Rejected for production — no incremental sync, no managed auth, inconsistent quality. Good for prototyping only. |
+| **Fivetran** | Rejected — warehouse-first model requires secondary pipeline for RAG. $10K-500K/yr. Overkill. |
+| **Nango** | Considered for future — best-in-class OAuth management for 700+ APIs. Could complement Airbyte if we need user-facing "Connect your app" UI with white-label OAuth flows. |
+| **Vectorize.io / Ragie.ai** | Rejected — managed RAG platforms that would replace our entire pipeline. We want control. |
+| **Unstructured.io connectors** | Already in the pipeline for doc parsing. Only 30 connectors — Airbyte covers far more SaaS apps. |
+
+---
+
+## Phase 4 — Operational Maturity
 
 Priority: **Medium** | Effort: **1-2 weeks** | Blocks: scale
 
@@ -147,29 +283,29 @@ Priority: **Medium** | Effort: **1-2 weeks** | Blocks: scale
 
 ---
 
-## Phase 4 — Search Quality
+## Phase 5 — Search Quality
 
 Priority: **Medium** | Effort: **1-2 weeks** | Blocks: accuracy
 
-### 4.1 Reranking
+### 5.1 Reranking
 - [ ] Add cross-encoder reranking stage after vector retrieval
 - [ ] Configurable per tenant (enable/disable, model choice)
 - [ ] Compare retrieval quality with/without reranking via eval suite
 
-### 4.2 Evaluation in CI
+### 5.2 Evaluation in CI
 - [ ] Integrate Ragas eval suite (`eval/ragas/run.py`) into CI pipeline
 - [ ] Maintain golden dataset of Q&A pairs per tenant
 - [ ] Block deploys if faithfulness or relevancy drops below threshold
 - [ ] Track eval scores over time (regression detection)
 
-### 4.3 Feedback Loop
+### 5.3 Feedback Loop
 - [ ] Aggregate user feedback (thumbs up/down) per query pattern
 - [ ] Surface low-scoring queries in admin dashboard
 - [ ] Use negative feedback to improve retrieval (hard negative mining)
 
 ---
 
-## Phase 5 — Zero Trust Architecture
+## Phase 6 — Zero Trust Architecture
 
 Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 
@@ -177,43 +313,43 @@ Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 > customer contracts explicitly require it. The security hardening in Phase 1 is sufficient
 > for most enterprise deployments.
 
-### 5.1 Service Mesh (mTLS)
+### 6.1 Service Mesh (mTLS)
 - [ ] Deploy Istio or Linkerd to cluster
 - [ ] Enable automatic mTLS for all pod-to-pod communication
 - [ ] Configure strict PeerAuthentication (reject plaintext)
 - [ ] Authorization policies: API → allowed backends only
 
-### 5.2 Fine-Grained RBAC Enforcement
+### 6.2 Fine-Grained RBAC Enforcement
 - [ ] Create `app/middleware/rbac.py` — evaluate `permissions` claim from JWT per endpoint
 - [ ] Define permission matrix: `chat:read`, `chat:write`, `admin:read`, `admin:write`, `docs:upload`
 - [ ] Route decorator: `@requires_permission("chat:write")`
 - [ ] Return 403 with specific missing permission in error response
 
-### 5.3 Secrets Rotation
+### 6.3 Secrets Rotation
 - [ ] Key Vault rotation policy (90-day auto-rotate for DB passwords)
 - [ ] Short-lived database credentials via Postgres Managed Identity (Azure) or IAM auth (AWS)
 - [ ] JWT token refresh endpoint with sliding window
 - [ ] Token revocation via Redis blacklist (check on every request)
 
-### 5.4 Admission Control & Policy Enforcement
+### 6.4 Admission Control & Policy Enforcement
 - [ ] Deploy OPA Gatekeeper or Kyverno
 - [ ] Policies: only allow images from ACR/ECR, enforce resource limits, block privileged pods
 - [ ] Pod Security Standards: enforce `restricted` profile via namespace labels
 - [ ] Image signing with cosign in CI, verification in admission webhook
 
-### 5.5 Network Microsegmentation
+### 6.5 Network Microsegmentation
 - [ ] NetworkPolicy per service (not just API — also Qdrant, Neo4j, Ray, Redis)
 - [ ] Deny all by default, explicit allow per service dependency
 - [ ] Separate namespaces: `rag-api`, `rag-data`, `rag-compute` with cross-namespace policies
 - [ ] Egress policies: restrict outbound to known endpoints only
 
-### 5.6 Comprehensive Audit Trail
+### 6.6 Comprehensive Audit Trail
 - [ ] Audit every API call: user, tenant, action, resource, outcome, IP, timestamp
 - [ ] Audit secret access via Key Vault diagnostic settings / CloudTrail
 - [ ] Ship audit logs to immutable storage (S3 Glacier / Blob Archive with legal hold)
 - [ ] Retention: 7 years for compliance, queryable via Athena / Log Analytics
 
-### 5.7 WAF & DDoS Protection
+### 6.7 WAF & DDoS Protection
 - [ ] AWS: AWS WAF in front of ALB with managed rule groups (core, SQL injection, known bad inputs)
 - [ ] Azure: Azure Front Door with WAF policy
 - [ ] Per-user/per-tenant rate limiting (replace IP-only limiting)
@@ -229,6 +365,7 @@ Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 | 2026-03-08 | Skip full zero trust | Overkill for current stage — Phase 1 hardening is proportional to actual risk |
 | 2026-03-08 | Prioritize admin API + GDPR over SDK | Unblocks procurement; SDK unblocks developer adoption (later) |
 | 2026-03-08 | Single-region with backups | Cross-region DR deferred until SLA commitments require it |
+| 2026-03-08 | Airbyte (PyAirbyte) for SaaS connectors | 550+ connectors with managed auth + incremental sync. Custom connectors don't scale past 3-5 sources. LlamaHub not production-grade. |
 
 ---
 
@@ -237,3 +374,4 @@ Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-08 | Initial roadmap — security hardening, enterprise features, zero trust analysis |
+| 1.1 | 2026-03-08 | Add Phase 3 — SaaS data connectors via Airbyte (PyAirbyte) integration design |
