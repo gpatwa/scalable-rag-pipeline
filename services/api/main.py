@@ -90,8 +90,14 @@ async def lifespan(app: FastAPI):
 
     # 3. Connect core clients
     await redis_client.connect()
-    await llm_client.start()
-    await embed_client.start()
+    try:
+        await llm_client.start()
+    except Exception as e:
+        logger.warning(f"LLM client init skipped: {e}")
+    try:
+        await embed_client.start()
+    except Exception as e:
+        logger.warning(f"Embed client init skipped: {e}")
 
     # Abstracted DB clients (VectorDB + GraphDB)
     await vectordb_client.connect()

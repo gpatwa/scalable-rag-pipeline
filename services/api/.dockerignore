@@ -30,6 +30,10 @@ venv/
 tests/
 test_*.py
 
+# Ray Serve model descriptors (run in Ray image, not API)
+app/models/embedding_engine.py
+app/models/vllm_engine.py
+
 # Documentation
 *.md
 docs/

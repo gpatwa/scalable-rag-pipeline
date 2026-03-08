@@ -1,0 +1,52 @@
+# Root .dockerignore — used by Dockerfile.ingestion
+# Prevents copying unnecessary files into the ingestion image.
+
+# Version control
+.git
+.gitignore
+
+# Infrastructure & deployment (not needed in ingestion image)
+infra/
+deploy/
+scripts/
+.github/
+
+# API service (has its own Dockerfile)
+services/
+
+# Documentation
+docs/
+*.md
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+
+# Docker / compose files
+docker-compose*.yml
+Dockerfile
+Dockerfile.*
+.dockerignore
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Terraform state
+*.tfstate
+*.tfstate.backup
+.terraform/
