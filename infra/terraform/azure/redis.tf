@@ -15,7 +15,8 @@ resource "azurerm_redis_cache" "main" {
 
   non_ssl_port_enabled          = false # Force TLS (matches AWS transit encryption)
   minimum_tls_version           = "1.2"
-  public_network_access_enabled = true # Dev: allow external access (prod: false + private endpoint)
+  # SECURITY: Set to false for production (use private endpoint below)
+  public_network_access_enabled = var.environment == "prod" ? false : true
 
   redis_configuration {
     # Maxmemory policy for cache eviction

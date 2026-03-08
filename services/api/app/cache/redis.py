@@ -14,11 +14,12 @@ class RedisClient:
     def __init__(self):
         self.redis = None
 
-    async def connect(self):
+    async def connect(self, redis_url: str | None = None):
         if not self.redis:
+            url = redis_url or settings.get_redis_url()
             # decode_responses=True means we get Strings back, not Bytes
             self.redis = redis.from_url(
-                settings.REDIS_URL,
+                url,
                 encoding="utf-8",
                 decode_responses=True
             )

@@ -31,20 +31,64 @@ secrets_client = create_secrets_client(
 )
 
 
+async def _inject_secrets_from_vault():
+    """
+    Fetch sensitive values from Key Vault / Secrets Manager and inject
+    them into settings *before* any database client is initialised.
+
+    This runs only when SECRETS_PROVIDER is not "env".  When using the
+    "env" provider, secrets are already present as environment variables
+    (injected via K8s Secret or .env file).
+    """
+    if settings.SECRETS_PROVIDER == "env":
+        logger.info("Secrets provider: env — secrets loaded from environment")
+        return
+
+    logger.info(f"Secrets provider: {settings.SECRETS_PROVIDER} — fetching from vault")
+
+    # Map of setting attribute -> vault secret name
+    secret_map = {
+        "DB_PASSWORD":    "db-password",
+        "JWT_SECRET_KEY": "jwt-secret-key",
+        "NEO4J_PASSWORD": "neo4j-password",
+        "REDIS_PASSWORD": "redis-primary-key",
+        "OPENAI_API_KEY": "openai-api-key",
+    }
+
+    for attr, vault_key in secret_map.items():
+        current = getattr(settings, attr, None)
+        if current:
+            # Already set via env var — don't overwrite
+            continue
+        value = await secrets_client.get_secret(vault_key)
+        if value:
+            # Inject into the settings singleton (bypass frozen validation)
+            object.__setattr__(settings, attr, value)
+            logger.info(f"  Injected {attr} from vault")
+        else:
+            logger.warning(f"  Secret '{vault_key}' not found in vault for {attr}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Centralized Resource Management.
-    Initialize all connection pools here.
+
+    Order of operations:
+      1. Fetch secrets from Key Vault (if configured)
+      2. Initialise database engine (using injected secrets)
+      3. Connect all clients
+      4. Wire up route dependencies
     """
-    # 1. Startup
-    logger.info("Initializing clients...")
+    # 1. Inject secrets from vault BEFORE initialising DB connections
+    await _inject_secrets_from_vault()
 
-    # Secrets client — available for runtime secret lookups
-    # (Primary secrets like DATABASE_URL are still injected via env/K8s secrets)
-    logger.info(f"Secrets provider: {settings.SECRETS_PROVIDER}")
+    # 2. Initialise Postgres engine (now that DB_PASSWORD is available)
+    from app.memory.postgres import init_engine
+    init_engine()
+    logger.info("Database engine initialised")
 
-    # Core clients
+    # 3. Connect core clients
     await redis_client.connect()
     await llm_client.start()
     await embed_client.start()
@@ -53,7 +97,7 @@ async def lifespan(app: FastAPI):
     await vectordb_client.connect()
     await graphdb_client.connect()
 
-    # Inject abstracted clients into modules that need them
+    # 4. Inject abstracted clients into modules that need them
     set_retriever_clients(vectordb_client, graphdb_client)
     set_semantic_vectordb(vectordb_client)
     set_health_clients(vectordb_client, graphdb_client)
@@ -78,7 +122,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # 2. Shutdown
+    # Shutdown
     logger.info("Closing clients...")
     await secrets_client.close()
     await vectordb_client.close()

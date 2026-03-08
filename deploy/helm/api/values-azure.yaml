@@ -59,3 +59,8 @@ env:
   GRAPHDB_PROVIDER: "neo4j"
   LLM_PROVIDER: "openai"
   EMBED_PROVIDER: "openai"
+  # Secrets from Azure Key Vault (set Key Vault URL from terraform output):
+  #   --set env.SECRETS_PROVIDER=azure_kv
+  #   --set env.AZURE_KEY_VAULT_URL=https://<vault-name>.vault.azure.net
+  SECRETS_PROVIDER: "azure_kv"
+  AZURE_KEY_VAULT_URL: ""  # Set from terraform output: key_vault_url

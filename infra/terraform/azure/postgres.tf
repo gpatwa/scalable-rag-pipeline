@@ -45,10 +45,33 @@ resource "azurerm_postgresql_flexible_server_database" "ragdb" {
 }
 
 # Firewall rule — allow Azure services (AKS pods communicate via Azure backbone)
+# SECURITY: In production, remove this rule and use VNet integration instead
+# by setting delegated_subnet_id + private_dns_zone_id on the server,
+# and setting public_network_access_enabled = false.
 resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
+  count     = var.environment == "prod" ? 0 : 1 # Disabled in production
   name      = "allow-azure-services"
   server_id = azurerm_postgresql_flexible_server.main.id
   # 0.0.0.0 to 0.0.0.0 = allow Azure internal services
   start_ip_address = "0.0.0.0"
   end_ip_address   = "0.0.0.0"
 }
+
+# ---------------------------------------------------------------------------
+# PRODUCTION: VNet integration for PostgreSQL (private networking)
+# ---------------------------------------------------------------------------
+# Uncomment and apply for production.  Requires the database subnet
+# delegation already defined in vnet.tf.
+#
+# To migrate from public to private:
+#   1. Set public_network_access_enabled = false on the server resource
+#   2. Add delegated_subnet_id and private_dns_zone_id
+#   3. Remove the firewall rules (count = 0 above)
+#   4. Run terraform apply (this will recreate the server)
+#
+# resource "azurerm_postgresql_flexible_server" "main" {
+#   ...
+#   delegated_subnet_id           = azurerm_subnet.database.id
+#   private_dns_zone_id           = azurerm_private_dns_zone.postgres.id
+#   public_network_access_enabled = false
+# }

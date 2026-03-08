@@ -28,10 +28,27 @@ class ChatHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # 3. Async Engine & Session
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False
-)
+#    The engine is lazily initialised so that secrets injected via
+#    Key Vault during the lifespan hook are available before the first
+#    database call.
+engine = None
+AsyncSessionLocal = None
+
+
+def init_engine(database_url: str | None = None):
+    """
+    Create the async engine and session factory.
+
+    Called from the FastAPI lifespan hook after secrets have been
+    injected from Key Vault.  Falls back to settings.get_database_url()
+    if no explicit URL is provided.
+    """
+    global engine, AsyncSessionLocal
+    url = database_url or settings.get_database_url()
+    engine = create_async_engine(url, echo=False)
+    AsyncSessionLocal = sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
+    )
 
 class PostgresMemory:
     """

@@ -2,7 +2,10 @@
 # Copy this to terraform.tfvars and fill in your values.
 # NEVER commit terraform.tfvars to git — it contains secrets.
 
-db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+db_password     = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+jwt_secret_key  = "CHANGE_ME_TO_A_RANDOM_HEX_STRING"   # Generate: openssl rand -hex 32
+neo4j_password  = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+openai_api_key  = ""                                     # Leave empty if not using OpenAI
 
 # Optional overrides:
 # location           = "eastus"

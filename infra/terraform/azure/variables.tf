@@ -42,6 +42,26 @@ variable "acr_name" {
   default     = "ragplatformacr"
 }
 
+variable "jwt_secret_key" {
+  description = "JWT signing secret for HS256 tokens"
+  type        = string
+  sensitive   = true
+}
+
+variable "neo4j_password" {
+  description = "Password for Neo4j graph database"
+  type        = string
+  sensitive   = true
+  default     = "password" # Override via tfvars for production
+}
+
+variable "openai_api_key" {
+  description = "OpenAI API key (leave empty to skip Key Vault storage)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "kubernetes_version" {
   description = "Kubernetes version for AKS"
   type        = string

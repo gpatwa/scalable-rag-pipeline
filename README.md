@@ -26,7 +26,8 @@ A production-grade, **multi-cloud**, **multi-tenant** Retrieval-Augmented Genera
 - [13. Observability](#13-observability)
 - [14. Validation & Testing](#14-validation--testing)
 - [15. Cost Optimization & Scaling](#15-cost-optimization--scaling)
-- [16. Troubleshooting](#16-troubleshooting)
+- [16. Security & Secrets Management](#16-security--secrets-management)
+- [17. Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -476,8 +477,9 @@ REDIS_HOST=$(terraform output -raw redis_hostname)
 REDIS_KEY=$(terraform output -raw redis_primary_key)
 STORAGE_ACCOUNT=$(terraform output -raw storage_account_name)
 API_IDENTITY_CLIENT_ID=$(terraform output -raw api_identity_client_id)
+KEY_VAULT_URL=$(terraform output -raw key_vault_url)
 
-# Create Kubernetes secret
+# DEV: Create K8s secret with embedded credentials (quick setup)
 kubectl create secret generic app-env-secret \
   --from-literal=DATABASE_URL="postgresql+asyncpg://ragadmin:<DB_PASSWORD>@${POSTGRES_FQDN}:5432/ragdb" \
   --from-literal=REDIS_URL="rediss://:${REDIS_KEY}@${REDIS_HOST}:6380/0" \
@@ -492,6 +494,20 @@ kubectl create secret generic app-env-secret \
   --from-literal=OTEL_EXPORTER="none" \
   --from-literal=OPENAI_API_KEY="sk-..." \
   --from-literal=ENV="dev"
+
+# PROD: Use Key Vault — no passwords in K8s Secret (see Section 16)
+# kubectl create secret generic app-env-secret \
+#   --from-literal=SECRETS_PROVIDER="azure_kv" \
+#   --from-literal=AZURE_KEY_VAULT_URL="${KEY_VAULT_URL}" \
+#   --from-literal=DB_HOST="${POSTGRES_FQDN}" \
+#   --from-literal=REDIS_HOST="${REDIS_HOST}" \
+#   --from-literal=CLOUD_PROVIDER="azure" \
+#   --from-literal=STORAGE_PROVIDER="azure_blob" \
+#   --from-literal=QDRANT_HOST="qdrant" \
+#   --from-literal=QDRANT_PORT="6333" \
+#   --from-literal=LLM_PROVIDER="openai" \
+#   --from-literal=EMBED_PROVIDER="openai" \
+#   --from-literal=ENV="prod"
 
 # Install cluster components
 helm repo add kuberay https://ray-project.github.io/kuberay-helm/
@@ -1114,7 +1130,119 @@ az aks nodepool scale \
 
 ---
 
-## 16. Troubleshooting
+## 16. Security & Secrets Management
+
+### Secrets Architecture
+
+The platform uses a **two-tier secrets strategy**:
+
+| Tier | Purpose | Provider | When Used |
+|------|---------|----------|-----------|
+| **Config secrets** | DB password, JWT key, API keys | Azure Key Vault / AWS Secrets Manager | Production |
+| **Non-secret config** | Host, port, provider selection | K8s Secret / env vars | Always |
+
+### Dev vs Production Secret Flow
+
+**Dev (default)** — all values in K8s Secret (base64-encoded):
+
+```
+K8s Secret (app-env-secret)
+  └─> envFrom in Pod
+       └─> settings.DATABASE_URL (includes password)
+```
+
+**Production** — passwords fetched from Key Vault at startup:
+
+```
+K8s Secret (non-sensitive config only)
+  └─> SECRETS_PROVIDER=azure_kv
+  └─> AZURE_KEY_VAULT_URL=https://...vault.azure.net
+  └─> DB_HOST, REDIS_HOST, QDRANT_HOST (no passwords)
+
+Azure Key Vault (encrypted at rest, access-controlled)
+  └─> db-password, jwt-secret-key, neo4j-password, redis-primary-key, openai-api-key
+       └─> Fetched at startup via Workload Identity (no static credentials)
+       └─> Injected into settings before DB connections are opened
+```
+
+### Setting Up Azure Key Vault (Production)
+
+```bash
+cd infra/terraform/azure
+
+# 1. Add secrets to terraform.tfvars
+cat >> terraform.tfvars <<EOF
+jwt_secret_key = "$(openssl rand -hex 32)"
+neo4j_password = "your-neo4j-password"
+openai_api_key = "sk-..."
+EOF
+
+# 2. Apply — provisions Key Vault + stores secrets
+terraform apply
+
+# 3. Get Key Vault URL
+KEY_VAULT_URL=$(terraform output -raw key_vault_url)
+
+# 4. Create K8s secret (no passwords — only non-sensitive config)
+kubectl create secret generic app-env-secret \
+  --from-literal=SECRETS_PROVIDER="azure_kv" \
+  --from-literal=AZURE_KEY_VAULT_URL="${KEY_VAULT_URL}" \
+  --from-literal=DB_HOST="$(terraform output -raw postgres_fqdn)" \
+  --from-literal=REDIS_HOST="$(terraform output -raw redis_hostname)" \
+  --from-literal=REDIS_PORT="6380" \
+  --from-literal=REDIS_SSL="true" \
+  --from-literal=CLOUD_PROVIDER="azure" \
+  --from-literal=STORAGE_PROVIDER="azure_blob" \
+  --from-literal=QDRANT_HOST="qdrant" \
+  --from-literal=QDRANT_PORT="6333" \
+  --from-literal=LLM_PROVIDER="openai" \
+  --from-literal=EMBED_PROVIDER="openai" \
+  --from-literal=ENV="prod"
+```
+
+### External Secrets Operator (Alternative)
+
+For automatic rotation, use the External Secrets Operator:
+
+```bash
+# Install ESO
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets --create-namespace
+
+# Apply Azure Key Vault ExternalSecret manifest
+kubectl apply -f deploy/secrets/external-secrets-azure.yaml
+```
+
+This creates a `ClusterSecretStore` backed by Azure Key Vault via Workload Identity, and an `ExternalSecret` that syncs secrets into `app-env-secret` with 1-hour refresh interval.
+
+### Security Checklist
+
+| Control | Dev | Production |
+|---------|-----|------------|
+| Secrets in Key Vault / Secrets Manager | - | Required |
+| Workload Identity (no static keys) | - | Required |
+| TLS for Redis | Enforced | Enforced |
+| Public network access (Postgres) | Allowed | Disabled |
+| Public network access (Redis) | Allowed | Disabled |
+| VNet integration (Postgres) | - | Required |
+| Private endpoint (Redis) | - | Required |
+| JWT secret from Key Vault | - | Required |
+| Non-root container | Enforced | Enforced |
+| Read-only root filesystem | - | Recommended |
+| Network policies | - | Recommended |
+| Pod security standards | - | Recommended |
+
+### Terraform Resources for Key Vault
+
+The `keyvault.tf` file provisions:
+
+- `azurerm_key_vault` — vault with access policies for Terraform operator, API pod, and Ray worker
+- `azurerm_key_vault_secret` — DB password, JWT secret, Redis key, Neo4j password, OpenAI key
+- Access via Workload Identity — no static credentials needed in pods
+
+---
+
+## 17. Troubleshooting
 
 ### Pod Stuck in Pending
 
@@ -1221,6 +1349,7 @@ scalable-rag-pipeline/
 │   ├── eks.tf, vpc.tf, rds.tf, redis.tf, s3.tf, iam.tf, karpenter.tf
 │   └── azure/                 # Azure infrastructure
 │       ├── aks.tf, vnet.tf, postgres.tf, redis.tf, acr.tf, storage.tf, iam.tf
+│       ├── keyvault.tf             # Azure Key Vault + secret storage
 │       └── terraform.tfvars.example
 ├── deploy/
 │   ├── helm/api/              # API Helm chart (values.yaml + values-azure.yaml)
@@ -1228,7 +1357,7 @@ scalable-rag-pipeline/
 │   ├── helm/neo4j/            # Neo4j Helm values
 │   ├── ray/                   # Ray Cluster + Serve configs
 │   ├── ingress/               # NGINX + Kong ingress manifests
-│   └── secrets/               # External Secrets operator
+│   └── secrets/               # External Secrets operator (AWS + Azure)
 ├── scripts/                   # Operational scripts
 │   ├── ingest_openai.py       # Quick ingestion (OpenAI + Qdrant)
 │   ├── ingest_local.py        # Local ingestion (Ollama)
