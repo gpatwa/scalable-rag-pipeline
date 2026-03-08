@@ -20,11 +20,13 @@ A production-grade, **multi-cloud**, **multi-tenant** Retrieval-Augmented Genera
 - [7. Azure Deployment](#7-azure-deployment)
 - [8. Data Ingestion](#8-data-ingestion)
 - [9. Chat UI](#9-chat-ui)
-- [10. CI/CD Pipelines](#10-cicd-pipelines)
-- [11. Observability](#11-observability)
-- [12. Validation & Testing](#12-validation--testing)
-- [13. Cost Optimization & Scaling](#13-cost-optimization--scaling)
-- [14. Troubleshooting](#14-troubleshooting)
+- [10. API Reference](#10-api-reference)
+- [11. Sample Queries](#11-sample-queries)
+- [12. CI/CD Pipelines](#12-cicd-pipelines)
+- [13. Observability](#13-observability)
+- [14. Validation & Testing](#14-validation--testing)
+- [15. Cost Optimization & Scaling](#15-cost-optimization--scaling)
+- [16. Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -692,9 +694,292 @@ A built-in dark-theme Chat UI is served directly by the API at the root path.
 
 ---
 
-## 10. CI/CD Pipelines
+## 10. API Reference
+
+All endpoints require `Authorization: Bearer <TOKEN>` except `/health/*` and `/auth/token`.
+
+### Authentication
+
+#### `POST /auth/token`
+Issues a development JWT token. **Only available when `ENV=dev`.**
+
+```bash
+curl -X POST http://<HOST>/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "dev-user",
+    "role": "admin",
+    "tenant_id": "default"
+  }'
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGci...",
+  "token_type": "bearer",
+  "user_id": "dev-user",
+  "tenant_id": "default",
+  "expires_in": 86400
+}
+```
+
+> In production, replace with your IdP (Auth0, Azure AD, AWS Cognito). Set `JWT_JWKS_URL`, `JWT_AUDIENCE`, `JWT_ISSUER` in config.
+
+---
+
+### Chat
+
+#### `POST /api/v1/chat/stream`
+Streaming RAG chat using Server-Sent Events (NDJSON). Runs the full LangGraph pipeline: plan → retrieve → respond.
+
+```bash
+curl -X POST http://<HOST>/api/v1/chat/stream \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What are the five pillars of the AWS Well-Architected Framework?",
+    "session_id": "optional-uuid-for-conversation-continuity"
+  }'
+```
+
+**Streamed NDJSON response (one JSON object per line):**
+```jsonl
+{"type": "status", "node": "planner",   "session_id": "abc123", "info": "Completed step: planner"}
+{"type": "status", "node": "retriever", "session_id": "abc123", "info": "Completed step: retriever"}
+{"type": "status", "node": "responder", "session_id": "abc123", "info": "Completed step: responder"}
+{"type": "answer",  "content": "The five pillars are: 1. Operational Excellence...", "session_id": "abc123"}
+{"type": "status", "node": "__end__",   "session_id": "abc123", "info": "Completed step: __end__"}
+```
+
+**Error event:**
+```json
+{"type": "error", "content": "An internal error occurred."}
+```
+
+**Session behaviour:**
+- Omit `session_id` → new session created, ID returned in each event
+- Provide `session_id` → conversation history loaded (last 6 turns)
+- Sessions are tenant-scoped — cross-tenant access returns HTTP 403
+
+---
+
+### File Upload
+
+#### `POST /api/v1/upload/generate-presigned-url`
+Generates a secure, time-limited URL for direct client-to-storage upload (bypasses API server for large files).
+
+```bash
+curl -X POST http://<HOST>/api/v1/upload/generate-presigned-url \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "quarterly_report.pdf",
+    "content_type": "application/pdf"
+  }'
+```
+
+**Response:**
+```json
+{
+  "upload_url": "https://ragplatformaksdocs.blob.core.windows.net/documents/...",
+  "file_id": "550e8400-e29b-41d4-a716-446655440000",
+  "object_key": "uploads/default/dev-user/550e8400.pdf"
+}
+```
+
+Upload directly to `upload_url` using a `PUT` request with the matching `Content-Type`.
+
+---
+
+### Feedback
+
+#### `POST /api/v1/feedback/`
+Submit user feedback on a chat response (thumbs up/down, comments).
+
+```bash
+curl -X POST http://<HOST>/api/v1/feedback/ \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "abc123",
+    "message_id": "msg-456",
+    "rating": 1,
+    "comment": "Great answer!"
+  }'
+```
+
+---
+
+### Health
+
+#### `GET /health/liveness`
+Kubernetes liveness probe — returns 200 if the process is alive.
+```json
+{"status": "ok"}
+```
+
+#### `GET /health/readiness`
+Kubernetes readiness probe — checks all dependency connections.
+```json
+{"redis": "up", "vectordb": "up", "graphdb": "up"}
+```
+Returns HTTP 503 if any dependency is down.
+
+---
+
+### Swagger UI
+
+Interactive API documentation is available at:
+```
+http://<HOST>/docs        # Swagger UI
+http://<HOST>/redoc       # ReDoc
+http://<HOST>/openapi.json # OpenAPI schema
+```
+
+---
+
+## 11. Sample Queries
+
+Use these queries against the ingested `aws_well_architected.pdf` (included in `data/test-docs/`) or your own documents.
+
+### Quick Test via curl
+
+```bash
+# 1. Get token
+TOKEN=$(curl -s -X POST http://<HOST>/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"dev-user","role":"admin","tenant_id":"default"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 2. Ask a question
+curl -s -X POST http://<HOST>/api/v1/chat/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<YOUR QUESTION HERE>", "tenant_id": "default"}'
+```
+
+---
+
+### AWS Well-Architected Framework (`data/test-docs/aws_well_architected.pdf`)
+
+This 1,002-page document covers AWS architecture best practices and is pre-ingested as 4,286 vectors.
+
+**Foundational questions:**
+```
+What are the five pillars of the AWS Well-Architected Framework?
+Describe the Operational Excellence pillar and its key principles.
+What is the difference between reliability and availability in cloud architecture?
+How does AWS define the Sustainability pillar?
+What are the design principles for the Security pillar?
+```
+
+**Deep-dive questions:**
+```
+What are the best practices for designing loosely coupled architectures on AWS?
+How should I approach disaster recovery planning according to the Well-Architected Framework?
+What is the difference between RPO and RTO in the context of reliability?
+How does the Performance Efficiency pillar recommend choosing the right compute service?
+What cost optimization strategies does AWS recommend for storage services?
+```
+
+**Cross-topic reasoning (tests multi-hop retrieval):**
+```
+How do the Security and Reliability pillars interact when designing a multi-region application?
+Compare the trade-offs between cost optimization and performance efficiency for a latency-sensitive API.
+What governance mechanisms does the Well-Architected Framework recommend for multi-account AWS environments?
+```
+
+---
+
+### Kubernetes / Cloud Operations (`eval/datasets/true_data/`)
+
+The `eval/datasets/true_data/` directory contains additional documents (DOCX, HTML, TXT) for testing:
+
+| File | Topics |
+|------|--------|
+| `cronjobs.docx` | Kubernetes CronJob scheduling, timing, retries |
+| `job_management.html` | K8s Job lifecycle, parallelism, completion modes |
+| `monitor_job.docx` | Job monitoring, status conditions, failure handling |
+| `parallel_work_queue.txt` | Work queue patterns, parallel job coordination |
+| `pods_autoscale.html` | HPA, VPA, custom metrics autoscaling |
+| `architecture.pptx` | System architecture diagrams |
+
+**Sample queries for these documents:**
+```
+How do you configure a Kubernetes CronJob to run every 15 minutes?
+What happens when a Kubernetes Job fails — does it retry automatically?
+How does the Horizontal Pod Autoscaler decide when to scale up?
+What is the difference between Job parallelism and completions in Kubernetes?
+How can I monitor the status of a running Kubernetes Job?
+```
+
+---
+
+### System Design (if using `grok_system_design_interview.pdf`)
+
+```
+What is consistent hashing and why is it used in distributed systems?
+How would you design a URL shortening service like TinyURL?
+What are the trade-offs between SQL and NoSQL databases?
+How does database sharding work and what are common sharding strategies?
+What is the CAP theorem?
+```
+
+---
+
+### Multi-Turn Conversation (tests session memory)
+
+Use the same `session_id` across requests to test conversation continuity:
+
+```bash
+SESSION="my-test-session-$(date +%s)"
+
+# Turn 1
+curl -s -X POST http://<HOST>/api/v1/chat/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"message\": \"What is the Reliability pillar?\", \"session_id\": \"$SESSION\"}"
+
+# Turn 2 — references Turn 1 (tests coreference resolution)
+curl -s -X POST http://<HOST>/api/v1/chat/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"message\": \"How does it relate to disaster recovery?\", \"session_id\": \"$SESSION\"}"
+
+# Turn 3 — tests semantic cache (exact same question → cached response)
+curl -s -X POST http://<HOST>/api/v1/chat/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"message\": \"What is the Reliability pillar?\", \"session_id\": \"$SESSION\"}"
+```
+
+---
+
+### Ingest Your Own Documents
+
+```bash
+# Port-forward Qdrant
+kubectl port-forward svc/qdrant 6333:6333 &
+
+# Ingest a PDF (OpenAI embeddings)
+OPENAI_API_KEY=sk-... python3 scripts/ingest_openai.py /path/to/your/document.pdf
+
+# Ingest for a specific tenant
+OPENAI_API_KEY=sk-... python3 scripts/ingest_openai.py /path/to/doc.pdf --tenant-id acme-corp
+
+# Ingest locally (Ollama embeddings)
+python3 scripts/ingest_local.py /path/to/document.pdf
+```
+
+Supported formats: **PDF**, **DOCX**, **HTML**, **TXT**
+
+---
+
+## 12. CI/CD Pipelines
 
 ### CI — `.github/workflows/ci.yml`
+
 
 Triggered on every push and pull request:
 
@@ -720,7 +1005,7 @@ Steps: OIDC auth → ECR/ACR push → Helm upgrade → smoke test
 
 ---
 
-## 11. Observability
+## 13. Observability
 
 Cloud-agnostic OpenTelemetry via `OTEL_EXPORTER` config:
 
@@ -746,7 +1031,7 @@ OTEL_ENDPOINT=http://jaeger:4317
 
 ---
 
-## 12. Validation & Testing
+## 14. Validation & Testing
 
 ### Run Tests
 
@@ -802,7 +1087,7 @@ curl -X POST http://<IP>/api/v1/chat/stream \
 
 ---
 
-## 13. Cost Optimization & Scaling
+## 15. Cost Optimization & Scaling
 
 ### AWS
 
@@ -829,7 +1114,7 @@ az aks nodepool scale \
 
 ---
 
-## 14. Troubleshooting
+## 16. Troubleshooting
 
 ### Pod Stuck in Pending
 
