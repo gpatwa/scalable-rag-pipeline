@@ -14,13 +14,28 @@ module "vpc" {
   #azs = ["${var.aws_region}a"]
 
   # PUBLIC SUBNETS: For Load Balancers and NAT Gateways
-  public_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  # Computed dynamically from var.vpc_cidr so each environment gets its own range:
+  #   prod    (10.0.0.0/16) → 10.0.1.0/24,   10.0.2.0/24,   10.0.3.0/24
+  #   staging (10.1.0.0/16) → 10.1.1.0/24,   10.1.2.0/24,   10.1.3.0/24
+  public_subnets = [
+    cidrsubnet(var.vpc_cidr, 8, 1),
+    cidrsubnet(var.vpc_cidr, 8, 2),
+    cidrsubnet(var.vpc_cidr, 8, 3),
+  ]
 
   # PRIVATE SUBNETS: For EKS Nodes, RDS, and Redis (Security Best Practice)
-  private_subnets = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  private_subnets = [
+    cidrsubnet(var.vpc_cidr, 8, 101),
+    cidrsubnet(var.vpc_cidr, 8, 102),
+    cidrsubnet(var.vpc_cidr, 8, 103),
+  ]
 
   # DATABASE SUBNETS: Specific isolation for Aurora/Redis
-  database_subnets = ["10.0.201.0/24", "10.0.202.0/24", "10.0.203.0/24"]
+  database_subnets = [
+    cidrsubnet(var.vpc_cidr, 8, 201),
+    cidrsubnet(var.vpc_cidr, 8, 202),
+    cidrsubnet(var.vpc_cidr, 8, 203),
+  ]
 
   # Enable NAT Gateway so private pods can download Docker images/Models from internet
   enable_nat_gateway = true

@@ -1,7 +1,7 @@
 # infra/terraform/s3.tf
 
 resource "aws_s3_bucket" "documents" {
-  bucket = "rag-platform-documents-prod-1" # Must be globally unique
+  bucket = "rag-platform-documents-${var.environment}-1" # Unique per environment
 
   # Force Destroy is FALSE for production data safety
   force_destroy = true # for development 
@@ -33,6 +33,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "docs_lifecycle" {
   rule {
     id     = "archive-old-files"
     status = "Enabled"
+
+    filter {} # Required by AWS provider >= 4.x (empty = apply to all objects)
 
     transition {
       days          = 30
