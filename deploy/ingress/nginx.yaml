@@ -13,7 +13,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   rules:
-  - host: api.your-rag-platform.com
+  - host: api.patwa-rag-platform.com
     http:
       paths:
       # Route /chat to the API
@@ -26,6 +26,22 @@ spec:
               number: 80
       # Route /upload to the API (for presigned generation)
       - path: /upload
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 80
+      # Route /health to the API (liveness/readiness probes)
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 80
+      # Catch-all: route remaining paths to the API
+      - path: /
         pathType: Prefix
         backend:
           service:

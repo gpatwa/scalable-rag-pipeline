@@ -2,6 +2,15 @@
 # Karpenter NodePool configuration for cost-effective dev/learning.
 # Karpenter auto-provisions EC2 instances based on pending pod requirements
 # and terminates them when no longer needed (scale-to-zero for GPU).
+#
+# Environment-specific values are injected via envsubst at deploy time:
+#   KARPENTER_NODE_ROLE — IAM role name for Karpenter-launched nodes
+#   CLUSTER_NAME        — EKS cluster name (used for discovery tags)
+#
+# Usage:
+#   export KARPENTER_NODE_ROLE="rag-platform-cluster-karpenter-node-..."
+#   export CLUSTER_NAME="rag-platform-cluster"
+#   envsubst < deploy/karpenter/nodepool.yaml | kubectl apply -f -
 
 ---
 # NodePool for general workloads (API, ingestion CPU workers)
@@ -81,15 +90,15 @@ kind: EC2NodeClass
 metadata:
   name: default
 spec:
-  role: rag-platform-cluster-karpenter-node-20260305224103429100000017
+  role: ${KARPENTER_NODE_ROLE}
   amiSelectorTerms:
     - alias: al2023@latest  # Amazon Linux 2023 (latest EKS-optimized AMI)
   subnetSelectorTerms:
     - tags:
-        karpenter.sh/discovery: rag-platform-cluster  # Must match var.cluster_name
+        karpenter.sh/discovery: ${CLUSTER_NAME}
   securityGroupSelectorTerms:
     - tags:
-        karpenter.sh/discovery: rag-platform-cluster
+        karpenter.sh/discovery: ${CLUSTER_NAME}
   blockDeviceMappings:
     - deviceName: /dev/xvda
       ebs:
@@ -104,15 +113,15 @@ kind: EC2NodeClass
 metadata:
   name: gpu
 spec:
-  role: rag-platform-cluster-karpenter-node-20260305224103429100000017
+  role: ${KARPENTER_NODE_ROLE}
   amiSelectorTerms:
     - alias: al2023@latest  # EKS-optimized AMI with GPU drivers
   subnetSelectorTerms:
     - tags:
-        karpenter.sh/discovery: rag-platform-cluster
+        karpenter.sh/discovery: ${CLUSTER_NAME}
   securityGroupSelectorTerms:
     - tags:
-        karpenter.sh/discovery: rag-platform-cluster
+        karpenter.sh/discovery: ${CLUSTER_NAME}
   blockDeviceMappings:
     - deviceName: /dev/xvda
       ebs:

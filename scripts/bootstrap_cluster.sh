@@ -9,6 +9,7 @@ set -euo pipefail
 CLUSTER_NAME="${CLUSTER_NAME:-rag-platform-cluster}"
 REGION="${REGION:-us-east-1}"
 HELM_VALUES_FILE="${HELM_VALUES_FILE:-}"  # Optional extra values file (e.g. values-staging.yaml)
+KARPENTER_NODE_ROLE="${KARPENTER_NODE_ROLE:-}"  # Auto-detected if not set
 
 echo "========================================"
 echo "  EKS Cluster Bootstrap"
@@ -35,8 +36,24 @@ kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.1
 # -----------------------------------------------------------
 echo ""
 echo "Step 3: Applying Karpenter NodePools..."
-kubectl apply -f deploy/karpenter/nodepool.yaml
-echo "  NodePools: general (SPOT) + gpu (SPOT, scale-to-zero)"
+# Auto-detect the Karpenter node role if not set
+if [ -z "$KARPENTER_NODE_ROLE" ]; then
+    KARPENTER_NODE_ROLE=$(aws iam list-roles \
+        --query "Roles[?contains(RoleName, \`${CLUSTER_NAME}-karpenter-node\`) || contains(RoleName, \`karpenter-node\`)].RoleName | [0]" \
+        --output text --region "$REGION" 2>/dev/null || echo "")
+    if [ -z "$KARPENTER_NODE_ROLE" ] || [ "$KARPENTER_NODE_ROLE" = "None" ]; then
+        echo "  WARNING: Could not auto-detect Karpenter node role. Set KARPENTER_NODE_ROLE env var."
+        echo "  Skipping NodePool apply."
+    else
+        echo "  Auto-detected KARPENTER_NODE_ROLE: $KARPENTER_NODE_ROLE"
+    fi
+fi
+
+if [ -n "$KARPENTER_NODE_ROLE" ] && [ "$KARPENTER_NODE_ROLE" != "None" ]; then
+    export KARPENTER_NODE_ROLE CLUSTER_NAME
+    envsubst '${KARPENTER_NODE_ROLE} ${CLUSTER_NAME}' < deploy/karpenter/nodepool.yaml | kubectl apply -f -
+    echo "  NodePools: general (SPOT) + gpu (SPOT, scale-to-zero)"
+fi
 
 # -----------------------------------------------------------
 # 4. Install ExternalSecrets Operator
@@ -144,9 +161,9 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
     --namespace ingress-nginx \
     --create-namespace \
     --set controller.service.type=LoadBalancer \
-    --set controller.tolerations[0].key=CriticalAddonsOnly \
-    --set controller.tolerations[0].operator=Exists \
-    --set controller.tolerations[0].effect=NoSchedule \
+    --set "controller.tolerations[0].key=CriticalAddonsOnly" \
+    --set "controller.tolerations[0].operator=Exists" \
+    --set "controller.tolerations[0].effect=NoSchedule" \
     --wait --timeout 120s || echo "  Ingress controller install (may already exist)"
 
 # Apply ingress routing rules
