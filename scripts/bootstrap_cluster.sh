@@ -48,6 +48,7 @@ helm repo update
 helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace external-secrets \
     --create-namespace \
+    --version 0.9.11 \
     --wait
 
 # Create ClusterSecretStore for AWS Secrets Manager (non-fatal for dev)
