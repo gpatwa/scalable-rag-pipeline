@@ -5,8 +5,10 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="rag-platform-cluster"
-REGION="us-east-1"
+# Allow overrides via environment variables for staging vs prod
+CLUSTER_NAME="${CLUSTER_NAME:-rag-platform-cluster}"
+REGION="${REGION:-us-east-1}"
+HELM_VALUES_FILE="${HELM_VALUES_FILE:-}"  # Optional extra values file (e.g. values-staging.yaml)
 
 echo "========================================"
 echo "  EKS Cluster Bootstrap"
@@ -158,10 +160,18 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "v0.1.0")
 
-helm upgrade --install api deploy/helm/api \
-    --set image.repository="${ECR_URI}/rag-backend-api" \
-    --set image.tag="${TAG}" \
-    --wait --timeout 120s
+# Build helm command — append extra values file if set (e.g. values-staging.yaml)
+HELM_CMD="helm upgrade --install api deploy/helm/api \
+    --set image.repository=${ECR_URI}/rag-backend-api \
+    --set image.tag=${TAG} \
+    --wait --timeout 120s"
+
+if [ -n "${HELM_VALUES_FILE:-}" ]; then
+    echo "  Using values override: ${HELM_VALUES_FILE}"
+    HELM_CMD="${HELM_CMD} -f ${HELM_VALUES_FILE}"
+fi
+
+eval "$HELM_CMD"
 
 # -----------------------------------------------------------
 # Summary

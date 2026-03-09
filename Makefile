@@ -1,6 +1,7 @@
 # Makefile
 
 .PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
+       infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
        setup lint format
 
@@ -17,15 +18,18 @@ help:
 	@echo "    make test          - Run tests"
 	@echo ""
 	@echo "  AWS Deployment:"
-	@echo "    make deploy-aws    - Full deploy: Terraform + Build + Bootstrap (first time)"
-	@echo "    make infra         - Apply Terraform only"
-	@echo "    make build         - Build & push Docker image to ECR"
-	@echo "    make bootstrap     - Bootstrap EKS cluster (K8s resources)"
-	@echo "    make init-cloud    - Initialize cloud databases"
-	@echo "    make deploy        - Helm upgrade API only (code changes)"
-	@echo "    make verify        - Full post-deploy verify (pods + DB init + tests + UI)"
-	@echo "    make smoke-test    - Run smoke tests only"
-	@echo "    make destroy       - Tear down ALL AWS resources"
+	@echo "    make deploy-aws       - Full deploy: Terraform + Build + Bootstrap (first time, prod)"
+	@echo "    make infra            - Apply Terraform (prod)"
+	@echo "    make infra-staging    - Apply Terraform (staging)"
+	@echo "    make build            - Build & push Docker image to ECR"
+	@echo "    make bootstrap        - Bootstrap EKS cluster (prod)"
+	@echo "    make bootstrap-staging- Bootstrap EKS cluster (staging)"
+	@echo "    make init-cloud       - Initialize cloud databases (prod)"
+	@echo "    make deploy           - Helm upgrade API only (prod, code changes)"
+	@echo "    make deploy-staging   - Helm upgrade API only (staging, code changes)"
+	@echo "    make verify           - Full post-deploy verify (pods + DB init + tests + UI)"
+	@echo "    make smoke-test       - Run smoke tests only"
+	@echo "    make destroy          - Tear down ALL AWS resources (prod)"
 	@echo ""
 	@echo "  Azure Deployment:"
 	@echo "    make deploy-azure      - Full deploy: Terraform + Build + Bootstrap (first time)"
@@ -124,6 +128,30 @@ smoke-test:
 # Destroy ALL AWS cloud resources (requires confirmation)
 destroy:
 	./scripts/cleanup.sh
+
+# Terraform for staging (isolated state key + staging.tfvars)
+infra-staging:
+	cd infra/terraform && \
+	terraform init -upgrade -reconfigure \
+	    -backend-config="key=staging/terraform.tfstate" && \
+	terraform apply -var-file=envs/staging.tfvars
+
+# Bootstrap staging EKS cluster (uses staging cluster name + staging values)
+bootstrap-staging:
+	CLUSTER_NAME=rag-platform-staging \
+	HELM_VALUES_FILE=deploy/helm/api/values-staging.yaml \
+	./scripts/bootstrap_cluster.sh
+
+# Helm upgrade API only on staging
+deploy-staging:
+	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text); \
+	TAG=$$(git rev-parse --short HEAD 2>/dev/null || echo "v0.1.0"); \
+	aws eks update-kubeconfig --name rag-platform-staging --region us-east-1; \
+	helm upgrade --install api deploy/helm/api \
+		-f deploy/helm/api/values-staging.yaml \
+		--set image.repository="$${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rag-backend-api" \
+		--set image.tag="$${TAG}" \
+		--namespace default
 
 # ============================================================
 # AZURE DEPLOYMENT
