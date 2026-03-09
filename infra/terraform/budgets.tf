@@ -1,5 +1,5 @@
 resource "aws_budgets_budget" "cost_guardrail" {
-  name              = "rag-pipeline-monthly-budget"
+  name              = "rag-pipeline-monthly-budget-${var.environment}"
   budget_type       = "COST"
   limit_amount      = "200" # Realistic for EKS dev (control plane alone is $73/mo)
   limit_unit        = "USD"

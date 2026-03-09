@@ -18,7 +18,7 @@ resource "aws_security_group" "redis_sg" {
 }
 
 resource "aws_elasticache_replication_group" "redis" {
-  replication_group_id = "rag-redis-prod"
+  replication_group_id = "rag-redis-${var.environment}"
   description          = "Redis for RAG Semantic Cache"
   node_type            = "cache.t4g.micro" # Cost effective Graviton
   num_cache_clusters   = 1 # Primary + Replica for HA

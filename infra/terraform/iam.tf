@@ -2,7 +2,7 @@
 
 # 1. IAM Policy for the Ingestion Pipeline (Ray Workers)
 resource "aws_iam_policy" "ingestion_policy" {
-  name        = "RAG_Ingestion_S3_Policy"
+  name        = "RAG_Ingestion_S3_Policy_${var.environment}"
   description = "Allows Ray workers to read/write documents bucket"
 
   policy = jsonencode({
@@ -29,7 +29,7 @@ module "ingestion_irsa_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
 
-  role_name = "rag-ingestion-role"
+  role_name = "rag-ingestion-role-${var.environment}"
   
   # Trust relationship: Only the 'ray-worker' service account in 'default' ns can use this
   oidc_providers = {
