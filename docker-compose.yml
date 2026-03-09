@@ -67,7 +67,73 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     networks:
       - rag-network
-    profiles: ["tools"] # This prevents it from starting automatically with 'docker compose up'
+    profiles: ["tools"]
+
+  # ─── Split-plane services ──────────────────────────────────────────────
+  # Start with: docker compose --profile split up
+
+  # Control Plane (SaaS management layer)
+  control-plane:
+    build:
+      context: .
+      dockerfile: services/control-plane/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - ENV=dev
+      - DATABASE_URL=sqlite+aiosqlite:///control_plane.db
+      - JWT_SECRET_KEY=dev-secret-change-in-production
+      - INTERNAL_API_KEY=internal-dev-key
+      - CORS_ORIGINS=*
+      - STATIC_DIR=/app/static
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - rag-network
+    profiles: ["split"]
+
+  # Data Plane (query processing in customer environment)
+  data-plane:
+    build:
+      context: .
+      dockerfile: services/data-plane/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DEPLOYMENT_MODE=data_plane
+      - SINGLE_TENANT_MODE=true
+      - DATA_PLANE_ID=dp-local-001
+      - CONTROL_PLANE_URL=http://control-plane:8001
+      - DATA_PLANE_API_KEY=dev-dp-key
+      - INTERNAL_API_KEY=internal-dev-key
+      - HEARTBEAT_INTERVAL_SECONDS=30
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=ragadmin
+      - DB_PASSWORD=changeme
+      - DB_NAME=rag_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - neo4j
+      - control-plane
+    networks:
+      - rag-network
+    profiles: ["split"]
+
+networks:
+  rag-network:
+    driver: bridge
 
 volumes:
   pg_data:

@@ -54,3 +54,27 @@ async def get_tenant_context(
         role=user.get("role", "user"),
         permissions=user.get("permissions", []),
     )
+
+
+# ── Data Plane context (single-tenant, no JWT resolution) ───────────────
+
+async def get_data_plane_context(
+    user_id: str = "data-plane-user",
+    role: str = "user",
+) -> TenantContext:
+    """
+    FastAPI dependency for data plane mode.
+
+    In single-tenant data plane deployments, there is no multi-tenant
+    JWT resolution. The user identity is forwarded from the control plane
+    via X-User-Id / X-User-Role headers.
+
+    Returns a TenantContext with a fixed tenant_id (the entire data plane
+    belongs to one customer).
+    """
+    return TenantContext(
+        tenant_id=DEFAULT_TENANT_ID,
+        user_id=user_id,
+        role=role,
+        permissions=["read", "write"],
+    )

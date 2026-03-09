@@ -1,9 +1,12 @@
 # services/api/app/memory/postgres.py
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, JSON, DateTime, Integer, Text, select, and_, func
+from sqlalchemy import Column, String, JSON, DateTime, Integer, Text, select, and_, func, true
 from datetime import datetime
 from app.config import settings
+
+# Single-tenant mode flag — when True, skip tenant_id filtering
+_single_tenant = settings.SINGLE_TENANT_MODE
 
 # 1. Database Setup
 Base = declarative_base()
@@ -105,8 +108,9 @@ class PostgresMemory:
         async with AsyncSessionLocal() as session:
             conditions = [
                 ChatHistory.session_id == session_id,
-                ChatHistory.tenant_id == tenant_id,
             ]
+            if not _single_tenant:
+                conditions.append(ChatHistory.tenant_id == tenant_id)
             if user_id is not None:
                 conditions.append(ChatHistory.user_id == user_id)
 
@@ -132,6 +136,8 @@ class PostgresMemory:
             True  – session exists and belongs to this user+tenant
             False – session exists but belongs to someone else (cross-tenant!)
             None  – session is brand new (no messages yet)
+
+        In single-tenant mode, only checks user ownership (no tenant filter).
         """
         async with AsyncSessionLocal() as session:
             # Check if any messages exist for this session_id at all
@@ -147,6 +153,8 @@ class PostgresMemory:
                 return None
 
             # Session exists — verify ownership
+            if _single_tenant:
+                return row.user_id == user_id
             return row.user_id == user_id and row.tenant_id == tenant_id
 
 
@@ -158,12 +166,12 @@ class PostgresMemory:
     ):
         """Load persisted memories for a user (max 10, newest first)."""
         async with AsyncSessionLocal() as session:
+            conditions = [UserMemory.user_id == user_id]
+            if not _single_tenant:
+                conditions.append(UserMemory.tenant_id == tenant_id)
             result = await session.execute(
                 select(UserMemory)
-                .where(and_(
-                    UserMemory.user_id == user_id,
-                    UserMemory.tenant_id == tenant_id,
-                ))
+                .where(and_(*conditions))
                 .order_by(UserMemory.created_at.desc())
                 .limit(limit)
             )
@@ -179,22 +187,20 @@ class PostgresMemory:
         """Store a new memory. Enforces max 10 per user by deleting the oldest."""
         async with AsyncSessionLocal() as session:
             async with session.begin():
+                mem_conditions = [UserMemory.user_id == user_id]
+                if not _single_tenant:
+                    mem_conditions.append(UserMemory.tenant_id == tenant_id)
+
                 count_result = await session.execute(
                     select(func.count(UserMemory.id))
-                    .where(and_(
-                        UserMemory.user_id == user_id,
-                        UserMemory.tenant_id == tenant_id,
-                    ))
+                    .where(and_(*mem_conditions))
                 )
                 count = count_result.scalar()
 
                 if count >= 10:
                     oldest = await session.execute(
                         select(UserMemory)
-                        .where(and_(
-                            UserMemory.user_id == user_id,
-                            UserMemory.tenant_id == tenant_id,
-                        ))
+                        .where(and_(*mem_conditions))
                         .order_by(UserMemory.created_at.asc())
                         .limit(1)
                     )

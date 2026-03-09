@@ -54,6 +54,9 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
 
     # Step 2: Define the tasks for Parallel Execution
 
+    # Build tenant filter (disabled in single-tenant data plane mode)
+    tenant_filter = {} if settings.SINGLE_TENANT_MODE else {"tenant_id": tenant_id}
+
     # Task A: Vector Search (Semantic Similarity) — filtered by tenant_id
     # Fetch more candidates (15) to account for duplicates, then deduplicate
     async def run_vector_search():
@@ -61,7 +64,7 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
             collection=settings.QDRANT_COLLECTION,
             vector=query_vector,
             limit=15,
-            filters={"tenant_id": tenant_id},
+            filters=tenant_filter,
         )
         # Deduplicate by text content (duplicate ingestions create identical chunks)
         seen_texts = set()
@@ -78,10 +81,11 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
         return unique_docs
 
     # Task B: Graph Search (Structural Relationships) — filtered by tenant_id
+    graph_tenant = None if settings.SINGLE_TENANT_MODE else tenant_id
     async def run_graph_search():
         try:
             return await _graphdb_client.query_related(
-                query=query, tenant_id=tenant_id, limit=5
+                query=query, tenant_id=graph_tenant, limit=5
             )
         except Exception as e:
             logger.error(f"Graph search failed: {e}")

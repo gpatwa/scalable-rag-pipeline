@@ -3,6 +3,7 @@ import uuid
 import logging
 from typing import Optional
 from app.clients.ray_embed import embed_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +44,12 @@ class SemanticCache:
             vector = await embed_client.embed_query(query)
 
             # 2. Search in the cache collection, filtered by tenant
+            cache_filters = {} if settings.SINGLE_TENANT_MODE else {"tenant_id": tenant_id}
             results = await _vectordb_client.search(
                 collection=CACHE_COLLECTION,
                 vector=vector,
                 limit=1,
-                filters={"tenant_id": tenant_id},
+                filters=cache_filters,
                 score_threshold=threshold,
             )
 
@@ -77,17 +79,16 @@ class SemanticCache:
             vector = await embed_client.embed_query(query)
 
             # 2. Save to Vector DB with tenant_id in payload
+            payload = {"query": query, "answer": answer}
+            if not settings.SINGLE_TENANT_MODE:
+                payload["tenant_id"] = tenant_id
             await _vectordb_client.upsert(
                 collection=CACHE_COLLECTION,
                 points=[
                     {
                         "id": str(uuid.uuid4()),
                         "vector": vector,
-                        "payload": {
-                            "query": query,
-                            "answer": answer,
-                            "tenant_id": tenant_id,
-                        },
+                        "payload": payload,
                     }
                 ],
             )

@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # -----------------------------------------------------------------
+    # Deployment Mode
+    # -----------------------------------------------------------------
+    # "monolith" — single service handles everything (default, local dev)
+    # "data_plane" — query processing only (runs in customer environment)
+    # "control_plane" — SaaS management layer (auth, routing, admin)
+    DEPLOYMENT_MODE: str = "monolith"
+
+    # When True, skip tenant_id filtering on all data queries.
+    # Used in data_plane mode where the entire deployment is single-tenant.
+    SINGLE_TENANT_MODE: bool = False
+
+    # -----------------------------------------------------------------
     # Database (Aurora Postgres / Azure Flexible Server)
     # -----------------------------------------------------------------
     # Option A: Full URL with embedded password (legacy / dev).

@@ -3,7 +3,8 @@
 .PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
-       setup lint format
+       setup lint format \
+       dev-control-plane dev-data-plane dev-split test-control-plane test-data-plane test-all
 
 help:
 	@echo "RAG Platform Commands:"
@@ -44,9 +45,18 @@ help:
 	@echo "    make lint          - Run ruff linter"
 	@echo "    make format        - Auto-fix lint + format code"
 	@echo ""
+	@echo "  Split-Plane Development:"
+	@echo "    make dev-control-plane  - Run control plane locally"
+	@echo "    make dev-data-plane     - Run data plane locally"
+	@echo "    make dev-split          - Run both planes via Docker Compose"
+	@echo "    make test-control-plane - Run control plane tests"
+	@echo "    make test-data-plane    - Run data plane tests"
+	@echo "    make test-all           - Run all tests (monolith + split)"
+	@echo ""
 	@echo "  Quick start (local):  make setup && make up && make init && make dev"
 	@echo "  Quick start (AWS):    make deploy-aws && make verify"
 	@echo "  Quick start (Azure):  make deploy-azure"
+	@echo "  Quick start (split):  make up && make dev-split"
 
 # ============================================================
 # LOCAL DEVELOPMENT
@@ -186,3 +196,34 @@ deploy-api-azure:
 # Destroy ALL Azure cloud resources (requires confirmation)
 destroy-azure:
 	./scripts/cleanup_azure.sh
+
+# ============================================================
+# SPLIT-PLANE DEVELOPMENT
+# ============================================================
+
+# Run control plane locally (port 8001)
+dev-control-plane:
+	cd services/control-plane && ENV=dev uvicorn main:app --reload --host 0.0.0.0 --port 8001
+
+# Run data plane locally (port 8080)
+dev-data-plane:
+	cd services/data-plane && uvicorn main:app --reload --host 0.0.0.0 --port 8080
+
+# Run both planes via Docker Compose (with all dependencies)
+dev-split:
+	docker compose --profile split up -d
+
+# Run control plane tests only
+test-control-plane:
+	pytest services/control-plane/tests/ -x -q
+
+# Run data plane tests only
+test-data-plane:
+	pytest services/data-plane/tests/ -x -q
+
+# Run all tests (monolith + control plane + data plane)
+# Each suite runs in its own pytest session to avoid conftest.py namespace collisions
+test-all:
+	pytest services/api/tests/ -x -q && \
+	pytest services/control-plane/tests/ -x -q && \
+	pytest services/data-plane/tests/ -x -q

@@ -1,0 +1,25 @@
+# services/control-plane/requirements.txt
+# Control plane dependencies — lightweight, no LLM/ML packages.
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+aiosqlite>=0.19.0       # Dev/testing — swap for asyncpg in production
+asyncpg>=0.29.0         # Production Postgres driver
+
+# Auth
+python-jose[cryptography]>=3.3.0
+
+# HTTP client (proxy to data planes)
+httpx>=0.25.0
+
+# Config
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Observability (optional)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
