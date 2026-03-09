@@ -8,14 +8,15 @@
 |------|--------|---------|
 | Multi-tenancy | Strong | Per-tenant isolation in Postgres, Qdrant, Neo4j, S3/Blob. Immutable TenantConfig. Rate limits per tenant. |
 | Authentication | Strong | JWT with JWKS/IdP support (Auth0, Azure AD, Cognito). Tenant + user context injection. |
-| Testing | Strong | 173 tests — tenant auth, data isolation, VectorDB/GraphDB abstraction, storage, observability, secrets. |
+| Control Plane / Data Plane | Strong | SaaS-ready split architecture. CP handles auth, routing, rate limiting, admin. DP handles query processing in customer's region. mTLS + API key auth. 198 tests. |
+| Testing | Strong | 198 tests across 3 suites — monolith (132), control plane (48), data plane (18). |
 | CI/CD | Strong | Trunk-based: lint → test → build → staging (auto) → prod (manual approval). |
 | Multi-cloud | Strong | AWS (EKS, Aurora, S3, ECR) and Azure (AKS, Postgres Flex, Blob, ACR) with provider abstraction. |
 | Secrets | Strong | Azure Key Vault + ESO + Workload Identity. AWS Secrets Manager + IRSA. No static credentials on pods. |
 | Observability | Good | OpenTelemetry with X-Ray, Azure Monitor, OTLP. Structured JSON logging. |
 | Container security | Good | Non-root, drop ALL capabilities, multi-stage builds, 125MB API image. |
 | API design | Good | v1 prefix, Pydantic validation, per-tenant rate limiting with 429 + Retry-After. |
-| Documentation | Good | Architecture docs, request flow, security guide, CONTRIBUTING.md. |
+| Documentation | Good | Architecture docs, request flow, security guide, CP/DP architecture, CONTRIBUTING.md. |
 
 ---
 
@@ -366,6 +367,7 @@ Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 | 2026-03-08 | Prioritize admin API + GDPR over SDK | Unblocks procurement; SDK unblocks developer adoption (later) |
 | 2026-03-08 | Single-region with backups | Cross-region DR deferred until SLA commitments require it |
 | 2026-03-08 | Airbyte (PyAirbyte) for SaaS connectors | 550+ connectors with managed auth + incremental sync. Custom connectors don't scale past 3-5 sources. LlamaHub not production-grade. |
+| 2026-03-09 | Control Plane / Data Plane split | Enables SaaS deployment with data residency. CP manages auth/routing/admin. DP runs in customer's cloud. REST + mTLS communication. Per-tenant rate limiting. |
 
 ---
 
@@ -375,3 +377,4 @@ Priority: **Low (unless compliance requires it)** | Effort: **3-4 weeks**
 |---------|------|---------|
 | 1.0 | 2026-03-08 | Initial roadmap — security hardening, enterprise features, zero trust analysis |
 | 1.1 | 2026-03-08 | Add Phase 3 — SaaS data connectors via Airbyte (PyAirbyte) integration design |
+| 1.2 | 2026-03-09 | Control Plane / Data Plane architecture implemented. 198 tests (132 monolith + 48 CP + 18 DP). Updated docs. |

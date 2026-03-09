@@ -20,7 +20,7 @@ CI/CD pipelines, observability, testing, security, and troubleshooting.
 PR opened / push to main
   ├── Lint & Test
   │   ├── ruff check (linting)
-  │   └── pytest (132 tests, SQLite mock)
+  │   └── pytest (198 tests, SQLite mock)
   ├── Docker Build
   │   └── Buildx with GHA cache
   └── Terraform Validate
@@ -91,39 +91,50 @@ The API uses structured JSON logging with configurable levels:
 
 ### Test Suite
 
-132 tests covering:
+198 tests across three service test suites:
 
-| Category | Count | Description |
-|----------|-------|-------------|
-| Unit Tests | ~90 | Config, auth, tenants, clients, agents |
-| Integration | ~30 | API endpoints, streaming, upload flow |
-| Provider Tests | ~12 | Factory pattern, provider switching |
+| Suite | Count | Description |
+|-------|-------|-------------|
+| **Monolith** (`services/api/tests/`) | 132 | Config, auth, tenants, clients, agents, API endpoints, streaming, upload, providers |
+| **Control Plane** (`services/control-plane/tests/`) | 48 | JWT auth, tenant CRUD, data plane registry, proxy routing, rate limiting, usage tracking |
+| **Data Plane** (`services/data-plane/tests/`) | 18 | API key auth, user context extraction, TenantContext, health endpoints, registration, config |
 
 ### Running Tests
 
 ```bash
-# Full suite
+# Monolith tests (default)
 make test
-# Or: pytest tests/ -x -q
 
-# Specific category
-pytest tests/test_config.py -v
-pytest tests/test_agents.py -v
-pytest tests/test_reranker.py -v
+# Control plane tests only
+make test-control-plane
+
+# Data plane tests only
+make test-data-plane
+
+# All three suites (runs sequentially to avoid conftest.py collisions)
+make test-all
+
+# Specific test file
+pytest services/control-plane/tests/test_cp_auth.py -v
+pytest services/data-plane/tests/test_dp_auth.py -v
 
 # With coverage
-pytest tests/ --cov=services/api/app --cov-report=term-missing
+pytest services/api/tests/ --cov=services/api/app --cov-report=term-missing
 ```
+
+> **Note:** The three test suites run in separate pytest sessions because each service has its own `conftest.py` with different path and module setup. `make test-all` handles this automatically.
 
 ### Test Environment
 
 Tests use lightweight mocks — no Docker or cloud services needed:
 
-- **Database:** SQLite in-memory (instead of Postgres)
+- **Database:** SQLite in-memory via `aiosqlite` (instead of Postgres)
 - **Redis:** Mock client
 - **Qdrant:** Mock client
 - **LLM:** Mock responses
 - **Neo4j:** Mock client (when `GRAPHDB_PROVIDER=none`)
+- **Control Plane DB:** SQLite in-memory (async via `aiosqlite`)
+- **Data Plane auth:** Mock `Request` objects with `X-DataPlane-Key` headers
 
 ---
 
@@ -287,6 +298,81 @@ curl http://localhost:8080/health/readiness
 
 # From inside the cluster
 kubectl exec -it <api-pod> -- curl localhost:8080/health/readiness
+```
+
+---
+
+## Split-Plane Operations
+
+### Running Locally
+
+```bash
+# Start control plane (port 8001)
+make dev-control-plane
+
+# Start data plane (port 8080)
+make dev-data-plane
+
+# Or run both via Docker Compose (with all dependencies)
+make dev-split
+```
+
+### Data Plane Health Monitoring
+
+The control plane runs a background health monitor that:
+
+1. Scans all registered data planes every 60 seconds
+2. Marks data planes as `unhealthy` if no heartbeat received for 90+ seconds
+3. Unhealthy data planes are excluded from tenant routing
+4. Decommissioned data planes are permanently excluded
+
+```bash
+# Check data plane health via admin API
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8001/health/data-planes
+
+# View specific data plane status
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8001/admin/data-planes/
+```
+
+### Data Plane Lifecycle
+
+| State | Description | Routing |
+|-------|-------------|---------|
+| `active` | Registered and healthy (heartbeat recent) | Included |
+| `unhealthy` | No heartbeat for > 90 seconds | Excluded |
+| `decommissioned` | Manually decommissioned via admin API | Permanently excluded |
+
+### Troubleshooting Split-Plane
+
+#### Data plane not receiving requests
+
+1. Check registration: `GET /admin/data-planes/` on control plane
+2. Check heartbeat: Is the data plane sending heartbeats every 30s?
+3. Check health: Is the data plane marked `active`?
+4. Check tenant mapping: Is the tenant's `tenant_id` associated with this data plane?
+
+#### Streaming proxy timeout
+
+The control plane uses `httpx.AsyncClient.stream()` with configurable timeouts. If data plane responses are slow:
+
+```bash
+# Check data plane health endpoints
+curl http://<data-plane>:8080/health/liveness
+curl http://<data-plane>:8080/health/info
+```
+
+#### Rate limit unexpectedly hit
+
+```bash
+# Check tenant's rate limit config
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8001/admin/tenants/<tenant_id>
+
+# View usage stats
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8001/admin/usage/<tenant_id>
 ```
 
 ---

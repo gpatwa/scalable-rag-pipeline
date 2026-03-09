@@ -228,6 +228,81 @@ python3 scripts/debug_pipeline.py "Who founded Acme Corp?"
 
 ---
 
+## Control Plane API (Split-Plane Mode)
+
+In split-plane deployment, the control plane (`services/control-plane/`, port 8001) exposes the following additional endpoints. End-user chat/upload endpoints (`/api/v1/*`) are proxied through to the appropriate data plane.
+
+### Auth
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/token` | None (dev only) | Generate a dev JWT token |
+
+### Proxy (forwarded to data planes)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/chat/stream` | JWT | Proxied to tenant's data plane (streaming NDJSON pass-through) |
+| `POST` | `/api/v1/upload` | JWT | Proxied to tenant's data plane |
+
+### Tenant Administration
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/admin/tenants/` | Admin JWT | Create a new tenant |
+| `GET` | `/admin/tenants/` | Admin JWT | List all tenants |
+| `GET` | `/admin/tenants/{id}` | Admin JWT | Get tenant details |
+| `PATCH` | `/admin/tenants/{id}` | Admin JWT | Update tenant (plan, rate limit, enable/disable) |
+
+### Data Plane Registry
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/admin/data-planes/register` | Internal API key | Register a new data plane |
+| `POST` | `/admin/data-planes/heartbeat` | Internal API key | Data plane heartbeat (health + metrics) |
+| `GET` | `/admin/data-planes/` | Admin JWT | List all registered data planes |
+| `DELETE` | `/admin/data-planes/{id}` | Admin JWT | Decommission a data plane |
+
+### Usage Tracking
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/internal/usage/report` | Internal API key | Data plane reports usage events |
+| `GET` | `/admin/usage/{tenant_id}` | Admin JWT | Get usage summary for a tenant |
+| `GET` | `/admin/usage/` | Admin JWT | Get aggregated usage across all tenants |
+
+### Health
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/health/liveness` | None | Control plane liveness probe |
+| `GET` | `/health/data-planes` | Admin JWT | Health status of all registered data planes |
+
+---
+
+## Data Plane API (Split-Plane Mode)
+
+In split-plane deployment, the data plane (`services/data-plane/`, port 8080) exposes query processing endpoints. These are called by the control plane proxy, not directly by end users.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/chat/stream` | `X-DataPlane-Key` | Execute RAG pipeline (streaming NDJSON) |
+| `POST` | `/api/v1/upload` | `X-DataPlane-Key` | Get presigned upload URL |
+| `GET` | `/health/liveness` | None | Data plane liveness probe |
+| `GET` | `/health/info` | None | Data plane metadata (ID, version, status) |
+
+### Data Plane Headers
+
+Requests from the control plane include these headers:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-DataPlane-Key` | Shared API key | Authenticate the control plane |
+| `X-User-Id` | User ID from JWT | Forward authenticated user identity |
+| `X-User-Role` | User role from JWT | Forward user role (admin/user) |
+
+---
+
 ## Related Docs
 
 - [Architecture & Design](architecture.md)

@@ -339,13 +339,125 @@ The final LangGraph node scores answer quality on a 0-1 scale:
 
 ---
 
+## 9. Control Plane / Data Plane Architecture
+
+The platform supports a **split-plane deployment** for SaaS scenarios with data residency requirements. The monolith can be decomposed into two independent services:
+
+- **Control Plane** — SaaS management layer (your cloud): auth, tenant management, routing, rate limiting, usage tracking
+- **Data Plane** — Query processing (customer's cloud/region): LLM inference, embeddings, vector/graph search, chat history
+
+One customer = one dedicated Data Plane. Each data plane runs in the customer's cloud region for data residency compliance.
+
+### Deployment Modes
+
+| Mode | `DEPLOYMENT_MODE` | Use Case |
+|------|-------------------|----------|
+| `monolith` | (default) | Single-instance dev/prod — everything in one FastAPI process |
+| `control_plane` | CP only | SaaS management layer: auth, routing, proxy, admin |
+| `data_plane` | DP only | Customer-deployed: query processing in `SINGLE_TENANT_MODE` |
+
+### Split Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph CP["Control Plane (SaaS Provider)"]
+        UI["Chat UI (SPA)"]
+        Auth["JWT Auth\n(Local / Auth0 / Azure AD)"]
+        TenantMgmt["Tenant CRUD"]
+        Router["Proxy Router\n+ Rate Limiter"]
+        Registry["Data Plane Registry\n+ Health Monitor"]
+        UsageMgmt["Usage Tracking"]
+        CPDB["Control Plane DB\n(Tenants, Data Planes, Usage)"]
+
+        UI --> Auth
+        Auth --> Router
+        Router --> CPDB
+        TenantMgmt --> CPDB
+        Registry --> CPDB
+        UsageMgmt --> CPDB
+    end
+
+    subgraph DP1["Data Plane — Customer A (eu-west-1)"]
+        DPAuth1["API Key Auth\n(X-DataPlane-Key)"]
+        Pipeline1["LangGraph Agent\nPlan → Retrieve → Respond → Evaluate"]
+        VDB1["Qdrant"]
+        GDB1["Neo4j"]
+        LLM1["LLM (Ray/OpenAI)"]
+        PG1["Postgres\n(chat history)"]
+
+        DPAuth1 --> Pipeline1
+        Pipeline1 --> VDB1 & GDB1 & LLM1
+        Pipeline1 --> PG1
+    end
+
+    subgraph DP2["Data Plane — Customer B (us-east-1)"]
+        DPAuth2["API Key Auth"]
+        Pipeline2["LangGraph Agent"]
+        VDB2["Qdrant"]
+        LLM2["LLM"]
+    end
+
+    Router -->|"REST + mTLS\nX-User-Id / X-User-Role"| DPAuth1
+    Router -->|"REST + mTLS"| DPAuth2
+    DP1 -->|"Heartbeat (30s)"| Registry
+    DP2 -->|"Heartbeat (30s)"| Registry
+```
+
+### Communication Protocol
+
+| Direction | Mechanism | Authentication |
+|-----------|-----------|----------------|
+| User → Control Plane | HTTPS | JWT (Bearer token) |
+| Control Plane → Data Plane | REST + optional mTLS | `X-DataPlane-Key` header |
+| Data Plane → Control Plane | REST (registration + heartbeat) | `X-Internal-Key` header |
+| User identity forwarding | HTTP headers | `X-User-Id` + `X-User-Role` |
+
+### Key Components
+
+| Component | Control Plane | Data Plane |
+|-----------|--------------|------------|
+| **Auth** | JWT validation (HS256/RS256 + JWKS) | API key from control plane |
+| **Database** | Tenants, data planes, usage events | Chat history, sessions |
+| **Routing** | Resolve tenant → data plane, streaming proxy | N/A (receives proxied requests) |
+| **Rate Limiting** | Per-tenant sliding window (configurable RPM) | N/A (enforced at CP) |
+| **Health** | Monitors data planes via heartbeat | Registers + sends heartbeats |
+| **Chat UI** | Serves SPA at `/` | Not served (CP handles UI) |
+| **AI Pipeline** | Not present | Full LangGraph agent pipeline |
+
+### Service Directory Layout
+
+```
+services/
+├── api/                    # Monolith (original, still works standalone)
+├── control-plane/          # Control Plane service
+│   ├── app/
+│   │   ├── auth/           # JWT auth (local + JWKS)
+│   │   ├── middleware/     # Per-tenant rate limiting
+│   │   ├── models/         # Tenant, DataPlane, UsageEvent (SQLAlchemy)
+│   │   ├── proxy/          # Streaming proxy, mTLS, tenant routing
+│   │   ├── registry/       # Data plane health monitor
+│   │   └── routes/         # Auth, tenants, data planes, proxy, usage, health
+│   ├── main.py             # FastAPI app (port 8001)
+│   └── Dockerfile
+└── data-plane/             # Data Plane service
+    ├── app/
+    │   ├── auth/           # API key validation + user context
+    │   ├── config.py       # Data plane settings
+    │   ├── registration/   # Heartbeat loop to control plane
+    │   └── routes/         # Chat, upload, health
+    ├── main.py             # FastAPI app (port 8080)
+    └── Dockerfile
+```
+
+---
+
 ## Related Docs
 
 - [AWS Deployment](deployment-aws.md) — EKS provisioning, staging/prod, bootstrap, cost management
 - [Azure Deployment](deployment-azure.md) — AKS provisioning, Workload Identity, Key Vault
 - [API Reference & Chat UI](api-reference.md) — endpoints, streaming protocol, sample queries
 - [Operations Guide](operations.md) — CI/CD, observability, testing, security, troubleshooting
-- [Request Flow](request_flow.md) — detailed step-by-step query lifecycle
-- [Security](security.md) — security controls and threat model
-- [Scaling](scaling.md) — autoscaling strategy and capacity planning
+- [Request Flow](request_flow.md) — detailed step-by-step query lifecycle (monolith + split modes)
+- [Security](security.md) — security controls, mTLS, API key auth
+- [Scaling](scaling.md) — autoscaling strategy, per-tenant data planes
 - [Roadmap](ROADMAP.md) — enterprise features and zero trust roadmap
