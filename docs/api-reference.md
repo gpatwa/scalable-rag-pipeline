@@ -1,0 +1,236 @@
+# API Reference & Chat UI
+
+## Chat UI
+
+The platform includes a built-in dark-themed single-page application served at the root URL (`/`). No separate frontend deployment is needed.
+
+- **Local:** `http://localhost:8000/`
+- **Staging/Prod:** `https://api.your-domain.com/`
+- **Port-forward:** `kubectl port-forward svc/api-service 8080:80` → `http://localhost:8080/`
+
+### Features
+
+- Real-time streaming responses (Server-Sent Events)
+- Conversation history with session management
+- Source attribution with document references
+- Dark theme with responsive layout
+- Works identically on AWS and Azure (backend-agnostic)
+
+---
+
+## Authentication
+
+### Development Token
+
+In `ENV=dev` mode, a convenience endpoint generates test tokens:
+
+```bash
+curl -X POST http://localhost:8000/auth/token \
+    -H "Content-Type: application/json" \
+    -d '{"username": "testuser", "tenant_id": "default"}'
+```
+
+Response:
+```json
+{
+    "access_token": "eyJ...",
+    "token_type": "bearer"
+}
+```
+
+> This endpoint is disabled in staging/production. Use your configured IdP (Auth0, Azure AD, Cognito) instead.
+
+### Production Auth Providers
+
+| Provider | Env Var | Config |
+|----------|---------|--------|
+| Local JWT | `AUTH_PROVIDER=local` | Built-in, dev only |
+| Auth0 | `AUTH_PROVIDER=auth0` | Set `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` |
+| Azure AD | `AUTH_PROVIDER=azure_ad` | Set `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID` |
+| AWS Cognito | `AUTH_PROVIDER=cognito` | Set `COGNITO_USER_POOL_ID`, `COGNITO_REGION` |
+
+The API validates JWTs using JWKS (JSON Web Key Sets) fetched from the IdP at startup.
+
+---
+
+## Endpoints
+
+### POST `/api/v1/chat/stream`
+
+Stream a chat response using the agentic RAG pipeline.
+
+**Request:**
+```bash
+curl -N -X POST http://localhost:8000/api/v1/chat/stream \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "message": "Who founded Acme Corp?",
+        "session_id": "optional-session-uuid",
+        "model": "llama3"
+    }'
+```
+
+**Response (Server-Sent Events):**
+```
+event: planner
+data: {"node": "planner", "content": "Classifying intent..."}
+
+event: retriever
+data: {"node": "retriever", "content": "Found 3 relevant chunks"}
+
+event: token
+data: {"node": "responder", "content": "Acme"}
+
+event: token
+data: {"node": "responder", "content": " Corp"}
+
+event: token
+data: {"node": "responder", "content": " was founded by Jane Smith"}
+
+event: sources
+data: {"sources": [{"file": "company_overview.txt", "chunk_id": "c-001", "score": 0.92}]}
+
+event: evaluator
+data: {"node": "evaluator", "score": 0.87, "reasoning": "Answer is grounded in sources"}
+
+event: done
+data: {"session_id": "abc-123", "message_id": "msg-456"}
+```
+
+### POST `/api/v1/upload`
+
+Get a presigned URL for direct document upload to S3/Blob Storage.
+
+**Request:**
+```bash
+curl -X POST http://localhost:8000/api/v1/upload \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"filename": "report.pdf", "content_type": "application/pdf"}'
+```
+
+**Response:**
+```json
+{
+    "upload_url": "https://s3.amazonaws.com/rag-docs/...",
+    "file_id": "f-789",
+    "expires_in": 3600
+}
+```
+
+The client PUTs the file directly to the presigned URL (no data goes through the API server).
+
+### POST `/api/v1/feedback`
+
+Submit feedback on a chat response (used for evaluation).
+
+**Request:**
+```bash
+curl -X POST http://localhost:8000/api/v1/feedback \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"message_id": "msg-456", "rating": "positive", "comment": "Accurate answer"}'
+```
+
+### GET `/health/liveness`
+
+Kubernetes liveness probe — returns 200 if the process is running.
+
+```bash
+curl http://localhost:8000/health/liveness
+# {"status": "ok"}
+```
+
+### GET `/health/readiness`
+
+Kubernetes readiness probe — returns 200 if all dependencies are connected.
+
+```bash
+curl http://localhost:8000/health/readiness
+# {"status": "ready", "checks": {"postgres": "ok", "redis": "ok", "qdrant": "ok"}}
+```
+
+---
+
+## Streaming Protocol
+
+The chat endpoint uses **Server-Sent Events (SSE)** for real-time streaming:
+
+| Event Type | Description |
+|------------|-------------|
+| `planner` | Intent classification result |
+| `retriever` | Retrieved chunks summary |
+| `token` | Individual response tokens (streamed) |
+| `sources` | Source documents with scores |
+| `evaluator` | Answer quality score (0-1) |
+| `done` | Stream complete, includes session/message IDs |
+| `error` | Error details if pipeline fails |
+
+### Client Integration
+
+```javascript
+const eventSource = new EventSource('/api/v1/chat/stream', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ message: 'Hello', session_id: sessionId })
+});
+
+eventSource.addEventListener('token', (e) => {
+    const data = JSON.parse(e.data);
+    appendToChat(data.content);
+});
+
+eventSource.addEventListener('done', (e) => {
+    eventSource.close();
+});
+```
+
+---
+
+## Sample Queries
+
+### Basic RAG Query
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/token \
+    -H "Content-Type: application/json" \
+    -d '{"username": "test"}' | jq -r .access_token)
+
+curl -N http://localhost:8000/api/v1/chat/stream \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"message": "What is the companys mission statement?"}'
+```
+
+### With Session Context (Multi-Turn)
+
+```bash
+# First message
+curl -N http://localhost:8000/api/v1/chat/stream \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"message": "Tell me about Project Alpha", "session_id": "session-1"}'
+
+# Follow-up (remembers context)
+curl -N http://localhost:8000/api/v1/chat/stream \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"message": "Who is the lead on that project?", "session_id": "session-1"}'
+```
+
+### Debug Pipeline
+
+Use the debug script to inspect the full retrieval pipeline:
+
+```bash
+python3 scripts/debug_pipeline.py "Who founded Acme Corp?"
+# Outputs: embedding vector, Qdrant scores, Neo4j results, re-ranker scores, final answer
+```
+
+---
+
+## Related Docs
+
+- [Architecture & Design](architecture.md)
+- [AWS Deployment](deployment-aws.md)
+- [Azure Deployment](deployment-azure.md)
+- [Operations Guide](operations.md)

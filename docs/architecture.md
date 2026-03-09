@@ -40,7 +40,7 @@ graph TB
             subgraph GPU_AWS["GPU Node Pool"]
                 Ray_AWS["Ray Serve"]
                 vLLM_AWS["vLLM Engine\nLlama-3-70B"]
-                Embed_AWS["Embedding Engine\nall-MiniLM"]
+                Embed_AWS["Embedding Engine\nnomic-embed-text / bge-m3"]
             end
             Qdrant_AWS["Qdrant\nVector DB"]
         end
@@ -65,7 +65,7 @@ graph TB
             subgraph GPU_AZ["GPU Node Pool"]
                 Ray_AZ["Ray Serve"]
                 vLLM_AZ["vLLM Engine\nLlama-3-70B"]
-                Embed_AZ["Embedding Engine\nall-MiniLM"]
+                Embed_AZ["Embedding Engine\nnomic-embed-text / bge-m3"]
             end
             Qdrant_AZ["Qdrant\nVector DB"]
         end
@@ -113,6 +113,7 @@ sequenceDiagram
     participant E as Embedding Engine (Ray)
     participant V as Qdrant (Vector Search)
     participant G as Neo4j (Graph Search)
+    participant R as Re-ranker
     participant L as vLLM (Llama-3)
     participant DB as Postgres
 
@@ -133,9 +134,12 @@ sequenceDiagram
         end
         V-->>LG: Relevant chunks
         G-->>LG: Entity graph context
+        LG->>R: Re-rank merged results (filter score < threshold)
+        R-->>LG: Top-ranked chunks
         LG->>L: Synthesize answer (chunks + graph + query)
         L-->>U: Stream tokens as SSE
-        LG-->>A: Final answer
+        Note over LG: Evaluator scores answer quality (0-1)
+        LG-->>A: Final answer + evaluation score
         A->>DB: Save Q&A (background)
         A->>C: Update semantic cache (background)
     end
@@ -167,7 +171,7 @@ flowchart LR
         RayJob["Ray Job\nOrchestrator"]
         Parse["Parse & Extract\n(unstructured, pytesseract)"]
         Chunk["Text Chunker\n(recursive, semantic)"]
-        EmbedI["Embedding Engine\nall-MiniLM L6 v2"]
+        EmbedI["Embedding Engine\nnomic-embed-text / bge-m3"]
         GraphEx["Graph Extractor\nvLLM (entity/relation)"]
 
         RayJob --> Parse --> Chunk
@@ -287,13 +291,42 @@ flowchart TD
 
 ---
 
+## 7. Re-Ranking Layer
+
+After hybrid retrieval merges vector + graph results, an optional re-ranker re-scores documents for relevance:
+
+| Provider | Env Var | Latency | Use Case |
+|----------|---------|---------|----------|
+| `none` | `RERANKER_PROVIDER=none` | 0ms | Dev (fast iteration) |
+| `llm` | `RERANKER_PROVIDER=llm` | ~200ms | Staging (single LLM call scores N docs) |
+| `cross_encoder` | `RERANKER_PROVIDER=cross_encoder` | ~50ms | Production (dedicated Ray Serve model) |
+
+**Design decisions:**
+- Scores normalized to 0.0–1.0 range
+- Threshold filtering (default 0.3) removes irrelevant chunks but always keeps at least 1
+- Graceful failure — any error falls back to original document order
+- Graph results are prioritized (merged before vector results)
+
+---
+
+## 8. Evaluator Node
+
+The final LangGraph node scores answer quality on a 0-1 scale:
+- Checks if the answer is grounded in the retrieved sources
+- Detects hallucination or unsupported claims
+- Score is returned to the client in the SSE stream
+- Can be used for automated quality monitoring and feedback loops
+
+---
+
 ## Component Summary
 
 | Component | AWS | Azure | Purpose |
 |-----------|-----|-------|---------|
 | Kubernetes | EKS + Karpenter | AKS + Karpenter | Container orchestration, autoscaling |
 | API | FastAPI (125MB image) | FastAPI (125MB image) | Query orchestration, auth, streaming |
-| AI engines | Ray Serve + vLLM + Embedding | Ray Serve + vLLM + Embedding | LLM inference, embeddings |
+| AI engines | Ray Serve + vLLM + Embedding | Ray Serve + vLLM + Embedding | LLM inference, embeddings (nomic-embed-text / bge-m3) |
+| Re-ranker | none / LLM / cross-encoder | none / LLM / cross-encoder | Post-retrieval relevance scoring |
 | Vector DB | Qdrant (in-cluster) | Qdrant (in-cluster) | Semantic similarity search |
 | Graph DB | Neo4j AuraDB | Neo4j AuraDB | Entity relationship queries |
 | Relational DB | Aurora Postgres | Postgres Flexible Server | Chat history, session state |
@@ -308,8 +341,11 @@ flowchart TD
 
 ## Related Docs
 
-- [`docs/request_flow.md`](./request_flow.md) — detailed step-by-step query lifecycle
-- [`docs/security.md`](./security.md) — security controls and threat model
-- [`docs/scaling.md`](./scaling.md) — autoscaling strategy and capacity planning
-- [`docs/ROADMAP.md`](./ROADMAP.md) — enterprise features and zero trust roadmap
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md) — developer workflow guide
+- [AWS Deployment](deployment-aws.md) — EKS provisioning, staging/prod, bootstrap, cost management
+- [Azure Deployment](deployment-azure.md) — AKS provisioning, Workload Identity, Key Vault
+- [API Reference & Chat UI](api-reference.md) — endpoints, streaming protocol, sample queries
+- [Operations Guide](operations.md) — CI/CD, observability, testing, security, troubleshooting
+- [Request Flow](request_flow.md) — detailed step-by-step query lifecycle
+- [Security](security.md) — security controls and threat model
+- [Scaling](scaling.md) — autoscaling strategy and capacity planning
+- [Roadmap](ROADMAP.md) — enterprise features and zero trust roadmap
