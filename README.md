@@ -6,9 +6,22 @@
 ![Tests](https://img.shields.io/badge/Tests-198%20passing-brightgreen)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 
-A production-grade, **multi-cloud**, **multi-tenant** Retrieval-Augmented Generation platform built on FastAPI, LangGraph, Qdrant, Neo4j, and Kubernetes. Supports both self-hosted (Ray/vLLM) and API-based (OpenAI) LLMs with a provider-abstraction pattern that makes every infrastructure component swappable.
+Turn any document corpus into an **intelligent, conversational knowledge base** — deployed as a fully managed SaaS or inside a customer's own cloud — with enterprise-grade security, data residency, and zero vendor lock-in.
 
-Includes a **Control Plane / Data Plane architecture** for SaaS deployment with data residency --- the control plane manages auth, tenant routing, and rate limiting while dedicated data planes run query processing in each customer's cloud region.
+### Why This Platform
+
+| Business Need | How It's Solved |
+|--------------|----------------|
+| **Data residency & compliance** | Control Plane / Data Plane split — customer data never leaves their cloud region; mTLS secures every cross-plane call |
+| **Zero vendor lock-in** | Provider-abstraction layer — swap LLMs (vLLM ↔ OpenAI), vector DBs, storage, and secrets backends with a single env var |
+| **Multi-tenant SaaS at scale** | Per-tenant auth, rate limiting, usage metering, and isolated data planes — onboard new customers without redeploying |
+| **Accurate, grounded answers** | Agentic LangGraph pipeline: intent classification → hybrid vector + knowledge-graph retrieval → LLM synthesis → automated quality scoring |
+| **Multi-cloud portability** | Identical codebase deploys to AWS EKS and Azure AKS with cloud-specific Terraform, Helm, and secrets integrations |
+| **Cost efficiency** | Spot/GPU scale-to-zero via Karpenter, semantic caching (Redis), and dedicated embedding models separate from the generative LLM |
+
+### Technology Stack
+
+Built on **FastAPI**, **LangGraph**, **Qdrant**, **Neo4j**, **Ray/vLLM**, and **Kubernetes** — with 198 tests, CI/CD pipelines, and full observability (OpenTelemetry, X-Ray, Azure Monitor).
 
 ## Quick Start (Local Development)
 
