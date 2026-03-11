@@ -67,6 +67,81 @@
   .status-dot.amber { background: var(--amber); animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+  /* ── System Info Bar ─────────────────────── */
+  #system-info-bar {
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+  }
+  #system-info-bar.visible {
+    max-height: 120px;
+    opacity: 1;
+    padding: 10px 24px;
+  }
+  .info-grid {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  .info-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .info-section .info-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+  .info-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .info-tag .tag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .info-tag .tag-dot.green { background: var(--green); }
+  .info-tag .tag-dot.amber { background: var(--amber); }
+  .info-tag .tag-dot.accent { background: var(--accent); }
+  .info-toggle {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    display: flex;
+    align-items: center;
+  }
+  .info-toggle:hover { color: var(--text); background: var(--surface2); }
+
   /* ── Chat Area ──────────────────────────── */
   #chat-area {
     flex: 1;
@@ -300,8 +375,15 @@
   <div class="status-bar">
     <span id="api-status"><span class="status-dot red"></span> Connecting...</span>
     <span id="session-id" style="font-family: monospace; font-size: 11px;"></span>
+    <button class="info-toggle" id="info-toggle-btn" onclick="toggleInfoBar()" title="System Info">&#x2699;</button>
   </div>
 </header>
+
+<div id="system-info-bar">
+  <div class="info-grid" id="info-grid">
+    <span class="info-section" style="color: var(--text-dim); font-style: italic;">Loading system info...</span>
+  </div>
+</div>
 
 <div id="chat-area">
   <div id="welcome">
@@ -339,6 +421,81 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
+// ── System Info Panel ─────────────────────────
+let systemInfoLoaded = false;
+
+function toggleInfoBar() {
+  const bar = document.getElementById('system-info-bar');
+  bar.classList.toggle('visible');
+}
+
+function renderSystemInfo(info, health) {
+  const grid = document.getElementById('info-grid');
+  const env = info.environment || {};
+  const models = info.models || {};
+  const ds = info.data_sources || {};
+
+  // Build env tag color
+  const envColor = env.env === 'prod' ? 'green' : 'amber';
+  const modeLabel = (env.deployment_mode || 'monolith').replace('_', ' ');
+
+  // Data source status from health check
+  const dsStatus = (name, provider, healthKey) => {
+    const up = health && health[healthKey] === 'up';
+    const dot = up ? 'green' : 'amber';
+    return `<span class="info-tag"><span class="tag-dot ${dot}"></span>${provider}</span>`;
+  };
+
+  grid.innerHTML = `
+    <div class="info-section">
+      <span class="info-label">Env</span>
+      <span class="info-tag"><span class="tag-dot ${envColor}"></span>${env.env || '?'}</span>
+      <span class="info-tag">${modeLabel}</span>
+    </div>
+    <div class="info-section">
+      <span class="info-label">LLM</span>
+      <span class="info-tag"><span class="tag-dot accent"></span>${models.llm_provider || '?'} / ${models.llm_model || '?'}</span>
+    </div>
+    <div class="info-section">
+      <span class="info-label">Embed</span>
+      <span class="info-tag"><span class="tag-dot accent"></span>${models.embed_provider || '?'} / ${models.embed_model || '?'}</span>
+    </div>
+    <div class="info-section">
+      <span class="info-label">Vector</span>
+      ${dsStatus('vectordb', ds.vectordb || '?', 'vectordb')}
+    </div>
+    <div class="info-section">
+      <span class="info-label">Graph</span>
+      ${dsStatus('graphdb', ds.graphdb || '?', 'graphdb')}
+    </div>
+    <div class="info-section">
+      <span class="info-label">Cache</span>
+      ${dsStatus('redis', 'redis', 'redis')}
+    </div>
+    <div class="info-section">
+      <span class="info-label">Storage</span>
+      <span class="info-tag">${ds.storage || '?'}</span>
+    </div>
+  `;
+}
+
+async function loadSystemInfo() {
+  if (systemInfoLoaded) return;
+  try {
+    const [infoRes, healthRes] = await Promise.all([
+      fetch(`${API_BASE}/api/v1/system/info`),
+      fetch(`${API_BASE}/health/readiness`).catch(() => null),
+    ]);
+    const info = await infoRes.json();
+    const health = healthRes ? await healthRes.json() : {};
+    renderSystemInfo(info, health);
+    systemInfoLoaded = true;
+  } catch (e) {
+    document.getElementById('info-grid').innerHTML =
+      '<span class="info-section" style="color: var(--red);">Failed to load system info</span>';
+  }
+}
+
 // ── Init: get token + check health ────────────
 async function init() {
   const label = document.querySelector('#api-status');
@@ -372,6 +529,10 @@ async function init() {
     // Readiness check timed out or failed — still functional for chat
     label.innerHTML = `<span class="status-dot amber"></span> Degraded`;
   }
+
+  // 3. Load system info (non-blocking), auto-show the bar
+  await loadSystemInfo();
+  document.getElementById('system-info-bar').classList.add('visible');
 }
 
 // ── Send message ──────────────────────────────

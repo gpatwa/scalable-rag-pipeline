@@ -15,7 +15,7 @@ from app.clients.reranker.factory import create_reranker_client
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
-from app.routes import chat, upload, health, auth
+from app.routes import chat, upload, health, auth, system
 from app.routes.health import set_clients as set_health_clients
 from app.config import settings
 
@@ -171,6 +171,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(upload.router, prefix="/api/v1/upload", tags=["Upload"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
+app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 
 # Serve Chat UI at root "/"
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
