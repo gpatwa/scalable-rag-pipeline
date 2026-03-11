@@ -3,6 +3,7 @@
 .PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
+       verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
        setup lint format \
        dev-control-plane dev-data-plane dev-split test-control-plane test-data-plane test-all
 
@@ -38,7 +39,7 @@ help:
 	@echo "    make build-azure       - Build & push Docker image to ACR"
 	@echo "    make bootstrap-azure   - Bootstrap AKS cluster (K8s resources)"
 	@echo "    make deploy-api-azure  - Helm upgrade API only (code changes)"
-	@echo "    make destroy-azure     - Tear down ALL Azure resources"
+	@echo "    make destroy-azure     - Tear down ALL Azure resources + verify"
 	@echo ""
 	@echo "  Developer Setup:"
 	@echo "    make setup         - Install deps + pre-commit hooks"
@@ -56,6 +57,13 @@ help:
 	@echo "  Quick start (local):  make setup && make up && make init && make dev"
 	@echo "  Quick start (AWS):    make deploy-aws && make verify"
 	@echo "  Quick start (Azure):  make deploy-azure"
+	@echo ""
+	@echo "  Post-Destroy Verification:"
+	@echo "    make verify-cleanup              - Check for orphaned AWS resources"
+	@echo "    make verify-cleanup-delete       - Check + delete orphaned AWS resources"
+	@echo "    make verify-cleanup-azure        - Check for orphaned Azure resources"
+	@echo "    make verify-cleanup-azure-delete - Check + delete orphaned Azure resources"
+	@echo ""
 	@echo "  Quick start (split):  make up && make dev-split"
 
 # ============================================================
@@ -138,6 +146,15 @@ smoke-test:
 # Destroy ALL AWS cloud resources (requires confirmation)
 destroy:
 	./scripts/cleanup.sh
+	@echo ""
+	@echo "Running post-destroy verification..."
+	./scripts/verify-cleanup.sh
+
+verify-cleanup:
+	./scripts/verify-cleanup.sh
+
+verify-cleanup-delete:
+	./scripts/verify-cleanup.sh --delete
 
 # Terraform for staging (isolated state key + staging.tfvars)
 infra-staging:
@@ -196,6 +213,15 @@ deploy-api-azure:
 # Destroy ALL Azure cloud resources (requires confirmation)
 destroy-azure:
 	./scripts/cleanup_azure.sh
+	@echo ""
+	@echo "Running post-destroy verification (Azure)..."
+	./scripts/verify-cleanup-azure.sh
+
+verify-cleanup-azure:
+	./scripts/verify-cleanup-azure.sh
+
+verify-cleanup-azure-delete:
+	./scripts/verify-cleanup-azure.sh --delete
 
 # ============================================================
 # SPLIT-PLANE DEVELOPMENT
