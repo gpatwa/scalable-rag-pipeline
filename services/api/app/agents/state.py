@@ -43,3 +43,6 @@ class AgentState(TypedDict):
 
     # Long-term memory — user preferences/facts from previous sessions
     user_memories: List[str]  # loaded at session start
+
+    # Pre-computed query embedding from semantic cache check (avoids duplicate embed call)
+    query_embedding: List[float]

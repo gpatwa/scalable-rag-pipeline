@@ -10,7 +10,7 @@ Usage:
   OPENAI_BASE_URL=                   # optional, for Azure/compatible APIs
 """
 import logging
-from typing import Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional
 
 import backoff
 from openai import AsyncOpenAI, APIError
@@ -67,3 +67,27 @@ class OpenAILLMClient:
 
         response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content
+
+    async def chat_completion_stream(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Streaming variant — yields token chunks as they are generated.
+        Uses the native OpenAI streaming API.
+        """
+        if not self.client:
+            raise RuntimeError("Client not initialized. Call start() first.")
+
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=1024,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices[0].delta else None
+            if delta:
+                yield delta

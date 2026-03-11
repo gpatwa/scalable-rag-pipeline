@@ -159,6 +159,30 @@ class Settings(BaseSettings):
     RERANKER_SCORE_THRESHOLD: float = 0.3  # Min score to keep (0.0-1.0)
     RERANKER_ENDPOINT: str = "http://reranker-service:8000/rerank"  # cross_encoder only
 
+    # -----------------------------------------------------------------
+    # Latency Optimization Flags
+    # -----------------------------------------------------------------
+    # Semantic cache: lower threshold catches more similar queries (default was 0.95)
+    SEMANTIC_CACHE_THRESHOLD: float = 0.90
+
+    # Evaluator: skip quality evaluation when retrieval returned documents
+    EVALUATOR_ENABLED: bool = True
+    EVALUATOR_SKIP_WITH_CONTEXT: bool = True
+
+    # Planner: cache intent classification in Redis to skip LLM call on repeats
+    PLANNER_CACHE_ENABLED: bool = True
+    PLANNER_CACHE_TTL: int = 3600  # seconds
+
+    # Planner: rule-based fast path for obvious queries (greetings, questions)
+    PLANNER_FAST_CLASSIFY: bool = True
+
+    # Database connection pool
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+
+    # LLM: stream tokens to client (time-to-first-token improvement)
+    LLM_STREAM_RESPONSE: bool = False  # Disabled by default (Phase 3)
+
     # CORS (comma-separated origins, e.g., "http://localhost:3000,https://your-domain.com")
     CORS_ORIGINS: str = "*"  # Default: allow all for dev. Restrict in production!
 

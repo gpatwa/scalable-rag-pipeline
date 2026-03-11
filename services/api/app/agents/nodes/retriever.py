@@ -49,8 +49,10 @@ async def retrieve_node(state: AgentState, config: RunnableConfig) -> Dict:
 
     logger.info(f"Retrieving context for: {query} (tenant={tenant_id})")
 
-    # Step 1: Get Embedding for the query (Call Ray Serve / OpenAI)
-    query_vector = await embed_client.embed_query(query)
+    # Step 1: Reuse pre-computed embedding from cache check, or compute fresh
+    query_vector = state.get("query_embedding") or await embed_client.embed_query(query)
+    if state.get("query_embedding"):
+        logger.info("Reusing pre-computed query embedding from cache check")
 
     # Step 2: Define the tasks for Parallel Execution
 

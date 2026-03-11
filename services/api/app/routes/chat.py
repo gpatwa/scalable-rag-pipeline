@@ -80,8 +80,10 @@ async def chat_stream(
         # ownership is True (same user+tenant) or None (new session) — both OK
 
     # 2. Semantic Cache Check (Fast Path)
-    # Check if we have answered a semantically identical question recently.
-    cached_ans = await cache.get_cached_response(req.message, tenant_id=tenant_id)
+    # Also captures the query embedding to reuse in the retriever (avoids duplicate embed call).
+    cached_ans, query_embedding = await cache.get_cached_response_with_embedding(
+        req.message, tenant_id=tenant_id
+    )
 
     if cached_ans:
         logger.info(f"Cache hit for session {session_id}")
@@ -104,19 +106,16 @@ async def chat_stream(
 
         return StreamingResponse(stream_cache(), media_type="application/x-ndjson")
 
-    # 3. Load Conversation History (Context Window)
-    # Fetch last 6 turns — now scoped by tenant_id as well
-    history_objs = await memory.get_history(
-        session_id, limit=6, user_id=user_id, tenant_id=tenant_id
+    # 3. Load Conversation History + Long-Term Memories (in parallel)
+    history_objs, memory_objs = await asyncio.gather(
+        memory.get_history(session_id, limit=6, user_id=user_id, tenant_id=tenant_id),
+        memory.get_user_memories(user_id, tenant_id),
     )
     history_dicts = [
         {"role": msg.role, "content": msg.content} for msg in history_objs
     ]
     # Append current user message
     history_dicts.append({"role": "user", "content": req.message})
-
-    # 3b. Load Long-Term User Memories
-    memory_objs = await memory.get_user_memories(user_id, tenant_id)
     user_memories = [
         f"[{m.memory_type}] {m.content}" for m in memory_objs
     ]
@@ -139,6 +138,7 @@ async def chat_stream(
         eval_reasoning="",
         retry_count=0,
         user_memories=user_memories,
+        query_embedding=query_embedding,  # Reuse embedding from cache check
     )
 
     # 5. Define Generator for Streaming Response
@@ -222,26 +222,29 @@ async def chat_stream(
                             "session_id": session_id
                         }) + "\n"
 
-            # 6. Post-Processing (Inside Generator Context)
+            # 6. Post-Processing — persist and cache after stream completes
             if final_answer:
-                # We await these to ensure data consistency before closing the stream
-                await memory.add_message(
-                    session_id, "user", req.message, user_id, tenant_id
-                )
-                await memory.add_message(
-                    session_id, "assistant", final_answer, user_id, tenant_id
-                )
-
-                # Update Cache
-                await cache.set_cached_response(req.message, final_answer, tenant_id=tenant_id)
-
-                # Extract long-term memories in background (non-blocking)
-                from app.memory.postgres import extract_and_store_memories
-                asyncio.create_task(
-                    extract_and_store_memories(
-                        req.message, final_answer, user_id, tenant_id
+                try:
+                    await asyncio.gather(
+                        memory.add_message(session_id, "user", req.message, user_id, tenant_id),
+                        memory.add_message(session_id, "assistant", final_answer, user_id, tenant_id),
+                        cache.set_cached_response(req.message, final_answer, tenant_id=tenant_id),
+                        return_exceptions=True,
                     )
-                )
+                except Exception as post_err:
+                    logger.error(f"Post-processing error: {post_err}", exc_info=True)
+
+                # Extract long-term memories in background (non-blocking, best-effort)
+                async def _extract_memories():
+                    try:
+                        from app.memory.postgres import extract_and_store_memories
+                        await extract_and_store_memories(
+                            req.message, final_answer, user_id, tenant_id
+                        )
+                    except Exception as mem_err:
+                        logger.error(f"Memory extraction error: {mem_err}", exc_info=True)
+
+                asyncio.create_task(_extract_memories())
 
         except Exception as e:
             logger.error(f"Error in chat stream: {e}", exc_info=True)

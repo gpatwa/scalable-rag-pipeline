@@ -1,9 +1,13 @@
 # services/api/app/agents/nodes/planner.py
+import hashlib
+import json as json_lib
 import logging
 from app.agents.state import AgentState
 from app.agents.json_utils import extract_json
 from app.clients.ray_llm import llm_client
 from app.tools.registry import get_tool_descriptions
+from app.config import settings
+from app.cache.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +47,48 @@ For complex multi-step queries, output ONLY valid JSON:
 }}"""
 
 
+_GREETINGS = frozenset({
+    "hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye",
+    "good morning", "good afternoon", "good evening", "howdy",
+})
+_QUESTION_PREFIXES = (
+    "what", "how", "why", "when", "where", "who", "which",
+    "explain", "describe", "tell me", "show me", "list", "define",
+    "summarize", "compare",
+)
+
+
+def _fast_classify(query: str, has_tool_result: bool) -> str | None:
+    """
+    Rule-based fast classification for obvious intent patterns.
+    Returns an action string or None if the query is ambiguous (fall through to LLM).
+    """
+    q = query.strip().lower().rstrip("!.")
+
+    # If we already have a tool result, direct answer
+    if has_tool_result:
+        return "direct_answer"
+
+    # Greetings / small talk — no retrieval needed
+    if q in _GREETINGS:
+        return "direct_answer"
+
+    # Clear question patterns → retrieve from knowledge base
+    if "?" in q or q.startswith(_QUESTION_PREFIXES):
+        return "retrieve"
+
+    return None  # Ambiguous, use LLM
+
+
 async def planner_node(state: AgentState) -> dict:
     """
     Decides the path through the LangGraph.
     Returns action field used by conditional edges for routing.
     Supports both single-step and multi-step planning.
+
+    Latency optimizations:
+    - Fast-classify: skip LLM for obvious intents (greetings, questions)
+    - Redis cache: cache intent results to skip LLM on repeated queries
     """
     logger.info("Planner Node: Analyzing query...")
 
@@ -77,10 +118,47 @@ async def planner_node(state: AgentState) -> dict:
             "iteration_count": state.get("iteration_count", 0) + 1,
         }
 
+    # --- Fast-path intent classification (skip LLM for obvious cases) ---
+    tool_result = state.get("tool_result", "")
+
+    if settings.PLANNER_FAST_CLASSIFY:
+        fast_action = _fast_classify(user_query, bool(tool_result))
+        if fast_action:
+            logger.info(f"Fast-classified intent: {fast_action} (skipped LLM)")
+            return {
+                "current_query": user_query,
+                "plan": ["fast-classified"],
+                "action": fast_action,
+                "tool_name": "",
+                "tool_input": "",
+                "current_step_index": -1,
+                "iteration_count": state.get("iteration_count", 0) + 1,
+            }
+
+    # --- Redis intent cache (skip LLM for repeated queries) ---
+    cache_key = None
+    if settings.PLANNER_CACHE_ENABLED and not tool_result:
+        cache_key = f"planner:{hashlib.sha256(user_query.encode()).hexdigest()[:16]}"
+        try:
+            cached = await redis_client.get(cache_key, tenant_id="global")
+            if cached:
+                plan = json_lib.loads(cached)
+                logger.info(f"Planner cache hit: action={plan.get('action')}")
+                return {
+                    "current_query": plan.get("refined_query", user_query),
+                    "plan": [plan.get("reasoning", "cached")],
+                    "action": plan.get("action", "retrieve"),
+                    "tool_name": "",
+                    "tool_input": "",
+                    "current_step_index": -1,
+                    "iteration_count": state.get("iteration_count", 0) + 1,
+                }
+        except Exception as e:
+            logger.debug(f"Planner cache lookup failed: {e}")
+
     # --- Initial planning: call LLM ---
 
     # Build context: include tool result if present (ReAct re-planning)
-    tool_result = state.get("tool_result", "")
     user_context = user_query
     if tool_result:
         user_context = (
@@ -142,6 +220,22 @@ async def planner_node(state: AgentState) -> dict:
                 }
 
         # --- Single-step plan ---
+        # Cache simple actions in Redis for future reuse
+        if cache_key and action in ("retrieve", "direct_answer"):
+            try:
+                await redis_client.set(
+                    cache_key,
+                    json_lib.dumps({
+                        "action": action,
+                        "refined_query": plan.get("refined_query", user_query),
+                        "reasoning": plan.get("reasoning", ""),
+                    }),
+                    tenant_id="global",
+                    ex=settings.PLANNER_CACHE_TTL,
+                )
+            except Exception as e:
+                logger.debug(f"Planner cache write failed: {e}")
+
         return {
             "current_query": plan.get("refined_query", user_query),
             "plan": [plan.get("reasoning", "")],

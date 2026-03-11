@@ -1,4 +1,5 @@
 # services/api/app/clients/ray_embed.py
+import asyncio
 import httpx
 import logging
 import backoff
@@ -41,19 +42,30 @@ class RayEmbedClient:
         return response.json()["embedding"]
 
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_tries=3)
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts (sequentially for Ollama, batched for Ray)."""
+    async def embed_documents(self, texts: list[str], batch_size: int = 10) -> list[list[float]]:
+        """
+        Embed multiple texts concurrently in batches.
+        Sends up to `batch_size` concurrent requests to the embedding service,
+        dramatically reducing wall-clock time for bulk embeddings.
+        """
         if not self.client:
             raise RuntimeError("Client not initialized. Call start() first.")
-        embeddings = []
-        for text in texts:
-            response = await self.client.post(
-                self.endpoint,
-                json={"model": self.model, "prompt": text}
-            )
-            response.raise_for_status()
-            embeddings.append(response.json()["embedding"])
-        return embeddings
+
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            tasks = [
+                self.client.post(
+                    self.endpoint,
+                    json={"model": self.model, "prompt": text},
+                )
+                for text in batch
+            ]
+            responses = await asyncio.gather(*tasks)
+            for response in responses:
+                response.raise_for_status()
+                all_embeddings.append(response.json()["embedding"])
+        return all_embeddings
 
 # Global Instance — created via factory based on EMBED_PROVIDER env var.
 # Consumers import `embed_client` from this module; the factory decides

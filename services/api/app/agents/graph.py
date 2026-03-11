@@ -6,6 +6,7 @@ from app.agents.nodes.retriever import retrieve_node
 from app.agents.nodes.responder import generate_node
 from app.agents.nodes.tool import tool_node
 from app.agents.nodes.evaluator import evaluator_node, retry_node
+from app.config import settings
 
 # Maximum ReAct iterations before forcing a response
 MAX_ITERATIONS = 3
@@ -29,12 +30,26 @@ def route_after_planner(state: AgentState) -> str:
 
 
 def route_after_responder(state: AgentState) -> str:
-    """After responder: check if multi-step plan has more steps, else evaluate."""
+    """After responder: check if multi-step plan has more steps, else evaluate.
+
+    Latency optimization: skip the evaluator LLM call when retrieval returned
+    documents (high-confidence answers).  Controlled via EVALUATOR_ENABLED and
+    EVALUATOR_SKIP_WITH_CONTEXT config flags.
+    """
     current_step_index = state.get("current_step_index", -1)
     plan_steps = state.get("plan_steps", [])
 
     if current_step_index >= 0 and current_step_index < len(plan_steps) - 1:
         return "step_advance"
+
+    # Skip evaluator when documents were found (configurable)
+    if settings.EVALUATOR_SKIP_WITH_CONTEXT and state.get("documents"):
+        return "end"
+
+    # Master kill-switch for evaluator
+    if not settings.EVALUATOR_ENABLED:
+        return "end"
+
     return "evaluator"
 
 
@@ -77,10 +92,11 @@ workflow.add_edge("retriever", "responder")
 # After tool execution → back to planner (ReAct loop)
 workflow.add_edge("tool_node", "planner")
 
-# After response → evaluate (or advance multi-step plan)
+# After response → evaluate (or advance multi-step plan, or end if evaluator skipped)
 workflow.add_conditional_edges("responder", route_after_responder, {
     "evaluator": "evaluator",
     "step_advance": "step_advance",
+    "end": END,
 })
 
 # Step advance → back to planner for next step
