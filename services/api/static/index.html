@@ -199,6 +199,39 @@
   .eval-badge.good { background: rgba(78,201,155,0.12); color: var(--green); }
   .eval-badge.poor { background: rgba(229,85,97,0.12); color: var(--red); }
 
+  /* ── Context images (multimodal) ─────────── */
+  .context-images {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .context-img-card {
+    position: relative;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--surface2);
+    max-width: 260px;
+  }
+  .context-img-card img {
+    display: block;
+    max-width: 260px;
+    max-height: 200px;
+    object-fit: contain;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .context-img-card img:hover { opacity: 0.85; }
+  .context-img-caption {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 4px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* ── Source badges ──────────────────────── */
   .source-badge {
     display: inline-block;
@@ -534,6 +567,30 @@ function handleEvent(event, stepsEl, contentEl) {
     chip.className = 'step-chip done';
     chip.innerHTML = `\u{27A1} step ${event.current_step + 1} <span class="checkmark">\u2713</span>`;
     stepsEl.appendChild(chip);
+    scrollToBottom();
+  }
+
+  if (event.type === 'context_images') {
+    const container = document.createElement('div');
+    container.className = 'context-images';
+    (event.images || []).forEach(img => {
+      const card = document.createElement('div');
+      card.className = 'context-img-card';
+      const imgEl = document.createElement('img');
+      imgEl.src = img.url;
+      imgEl.alt = img.caption || img.filename || 'Retrieved image';
+      imgEl.title = img.filename || '';
+      imgEl.onclick = () => window.open(img.url, '_blank');
+      card.appendChild(imgEl);
+      if (img.caption || img.filename) {
+        const cap = document.createElement('div');
+        cap.className = 'context-img-caption';
+        cap.textContent = img.caption || img.filename;
+        card.appendChild(cap);
+      }
+      container.appendChild(card);
+    });
+    contentEl.parentElement.insertBefore(container, contentEl);
     scrollToBottom();
   }
 

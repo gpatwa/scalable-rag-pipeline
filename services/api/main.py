@@ -12,6 +12,7 @@ from app.clients.vectordb.factory import create_vectordb_client
 from app.clients.graphdb.factory import create_graphdb_client
 from app.clients.secrets.factory import create_secrets_client
 from app.clients.reranker.factory import create_reranker_client
+from app.clients.storage.factory import create_storage_client
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
@@ -34,6 +35,19 @@ reranker_client = create_reranker_client(
     settings.RERANKER_PROVIDER,
     score_threshold=settings.RERANKER_SCORE_THRESHOLD,
 )
+
+# Storage client (for presigned download URLs — used by multimodal retriever)
+storage_client = create_storage_client(settings.STORAGE_PROVIDER)
+
+# Gemini embed client (for multimodal collection queries)
+gemini_embed_client = None
+if settings.MULTIMODAL_ENABLED:
+    try:
+        from app.clients.gemini_embed import GeminiEmbedClient
+        gemini_embed_client = GeminiEmbedClient()
+    except ImportError as e:
+        logger.warning(f"Could not import GeminiEmbedClient: {e}")
+        gemini_embed_client = None
 
 
 async def _inject_secrets_from_vault():
@@ -118,8 +132,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Reranker client init skipped: {e}")
 
+    # Multimodal: init Gemini embed client + create multimodal Qdrant collection
+    if gemini_embed_client:
+        try:
+            await gemini_embed_client.start()
+            await vectordb_client.create_collection(
+                settings.MULTIMODAL_COLLECTION,
+                vector_size=settings.GEMINI_EMBED_DIMENSIONS,
+            )
+            logger.info(
+                f"Multimodal enabled: collection={settings.MULTIMODAL_COLLECTION}, "
+                f"dims={settings.GEMINI_EMBED_DIMENSIONS}"
+            )
+        except Exception as e:
+            logger.warning(f"Multimodal init skipped: {e}")
+
     # 4. Inject abstracted clients into modules that need them
-    set_retriever_clients(vectordb_client, graphdb_client, reranker_client)
+    set_retriever_clients(
+        vectordb_client, graphdb_client, reranker_client,
+        storage=storage_client, gemini_embed=gemini_embed_client,
+    )
     set_semantic_vectordb(vectordb_client)
     set_health_clients(vectordb_client, graphdb_client)
 
@@ -152,6 +184,8 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     await llm_client.close()
     await embed_client.close()
+    if gemini_embed_client:
+        await gemini_embed_client.close()
 
 # FastAPI Application
 app = FastAPI(title="Enterprise RAG Platform", version="1.0.0", lifespan=lifespan)

@@ -208,6 +208,27 @@ async def chat_stream(
                         "session_id": session_id,
                     }) + "\n"
 
+                # Stream retrieved images to frontend (multimodal)
+                if node_name == "retriever":
+                    docs = node_data.get("documents", [])
+                    image_docs = [
+                        d for d in docs
+                        if isinstance(d, dict) and d.get("type") == "image"
+                    ]
+                    if image_docs:
+                        yield json.dumps({
+                            "type": "context_images",
+                            "images": [
+                                {
+                                    "url": d.get("url", ""),
+                                    "caption": d.get("caption", ""),
+                                    "filename": d.get("filename", ""),
+                                }
+                                for d in image_docs
+                            ],
+                            "session_id": session_id,
+                        }) + "\n"
+
                 # Capture Final Answer from Responder Node
                 if node_name == "responder":
                     # The responder node appends the final AI message to state['messages']

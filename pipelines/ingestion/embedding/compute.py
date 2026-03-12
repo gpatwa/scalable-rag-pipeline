@@ -1,6 +1,11 @@
 # pipelines/ingestion/embedding/compute.py
+import os
 import httpx
+import logging
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
 
 class BatchEmbedder:
     """
@@ -15,10 +20,10 @@ class BatchEmbedder:
     def __call__(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """
         Receives a batch of text chunks.
-        Returns the batch with 'embedding' field added.
+        Returns the batch with 'vector' field added.
         """
         texts = batch["text"]
-        
+
         try:
             response = self.client.post(
                 self.endpoint,
@@ -26,11 +31,76 @@ class BatchEmbedder:
             )
             response.raise_for_status()
             embeddings = response.json()["embeddings"]
-            
+
             # Add embeddings to the batch dictionary
             batch["vector"] = embeddings
             return batch
-            
+
         except Exception as e:
             # In Ray, raising exception triggers retry logic automatically
             raise e
+
+
+class MultimodalBatchEmbedder:
+    """
+    Callable Class for Ray Data with multimodal support.
+    Routes ALL content through Gemini for unified embedding space.
+    Text and images must share the same vector space for cross-modal retrieval.
+    """
+    def __init__(self):
+        self.gemini_client = None
+        self.model = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-2-preview")
+        self.dimensions = int(os.getenv("GEMINI_EMBED_DIMENSIONS", "768"))
+
+    def _ensure_client(self):
+        if self.gemini_client is None:
+            from google import genai
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise RuntimeError("GOOGLE_API_KEY required for MultimodalBatchEmbedder")
+            self.gemini_client = genai.Client(api_key=api_key)
+
+    def __call__(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Receives a batch with content_type, text, image_bytes, mime_type fields.
+        Embeds everything via Gemini for a unified vector space.
+        Returns the batch with 'vector' field added.
+        """
+        from google.genai import types
+
+        self._ensure_client()
+
+        content_types = batch.get("content_type", ["text"] * len(batch["text"]))
+        vectors = []
+
+        for i, ct in enumerate(content_types):
+            try:
+                if ct == "image":
+                    image_bytes = batch["image_bytes"][i]
+                    mime_type = batch["mime_type"][i]
+                    part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                    result = self.gemini_client.models.embed_content(
+                        model=self.model,
+                        contents=part,
+                        config=types.EmbedContentConfig(
+                            task_type="RETRIEVAL_DOCUMENT",
+                            output_dimensionality=self.dimensions,
+                        ),
+                    )
+                else:
+                    text = batch["text"][i]
+                    result = self.gemini_client.models.embed_content(
+                        model=self.model,
+                        contents=text,
+                        config=types.EmbedContentConfig(
+                            task_type="RETRIEVAL_DOCUMENT",
+                            output_dimensionality=self.dimensions,
+                        ),
+                    )
+                vectors.append(list(result.embeddings[0].values))
+            except Exception as e:
+                logger.error(f"Embedding failed for item {i} (type={ct}): {e}")
+                vectors.append(None)
+
+        batch["vector"] = vectors
+        return batch

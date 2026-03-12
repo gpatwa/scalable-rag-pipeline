@@ -116,6 +116,19 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"           # Cheap default for dev
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"  # 1536 dims
 
+    # Gemini (used when EMBED_PROVIDER = "gemini")
+    GOOGLE_API_KEY: Optional[str] = None
+    GEMINI_EMBED_MODEL: str = "gemini-embedding-2-preview"
+    GEMINI_EMBED_DIMENSIONS: int = 768  # 128-3072, Matryoshka MRL
+
+    # -----------------------------------------------------------------
+    # Multimodal Support
+    # -----------------------------------------------------------------
+    MULTIMODAL_ENABLED: bool = False           # Feature flag for gradual rollout
+    MULTIMODAL_COLLECTION: str = "rag_multimodal"  # Separate Qdrant collection for Gemini embeddings
+    IMAGE_STORAGE_PREFIX: str = "images"       # S3/Blob prefix for extracted images
+    MAX_IMAGE_SIZE_MB: int = 10                # Skip images larger than this
+
     # -----------------------------------------------------------------
     # Security & Authentication
     # -----------------------------------------------------------------

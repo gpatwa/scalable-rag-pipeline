@@ -84,10 +84,19 @@ def create_embed_client(
         logger.info("Using Ray/BGE-M3 Embedding provider")
         return RayEmbedClient()
 
+    elif provider == "gemini":
+        try:
+            from app.clients.gemini_embed import GeminiEmbedClient
+        except ImportError as e:
+            raise ValueError(f"GeminiEmbedClient not available: {e}")
+
+        logger.info(f"Using Gemini Embedding provider (model={model})")
+        return GeminiEmbedClient(model=model) if model else GeminiEmbedClient()
+
     else:
         raise ValueError(
             f"Unknown EMBED_PROVIDER: '{provider}'. "
-            f"Supported: 'ray', 'openai'"
+            f"Supported: 'ray', 'openai', 'gemini'"
         )
 
 

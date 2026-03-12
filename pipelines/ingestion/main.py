@@ -1,11 +1,11 @@
 # pipelines/ingestion/main.py
+import os
 import ray
-import boto3
 import logging
 from typing import Dict, Any
 from pipelines.ingestion.loaders.pdf import parse_pdf_bytes
-from pipelines.ingestion.chunking.splitter import split_text
-from pipelines.ingestion.embedding.compute import BatchEmbedder
+from pipelines.ingestion.chunking.splitter import split_text, split_multimodal
+from pipelines.ingestion.embedding.compute import BatchEmbedder, MultimodalBatchEmbedder
 from pipelines.ingestion.graph.extractor import GraphExtractor
 from pipelines.ingestion.indexing.qdrant import QdrantIndexer
 from pipelines.ingestion.indexing.neo4j import Neo4jIndexer
@@ -15,75 +15,108 @@ ray.init(address="auto")
 
 logger = logging.getLogger(__name__)
 
+MULTIMODAL_ENABLED = os.getenv("MULTIMODAL_ENABLED", "false").lower() == "true"
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
+def _is_image_file(filename: str) -> bool:
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return ext in IMAGE_EXTENSIONS
+
+
 def process_batch(batch: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ray Data transformation function.
     Receives a batch of file contents (S3 bytes).
+    Supports multimodal content when MULTIMODAL_ENABLED=true.
     """
     results = []
-    
+
     for i, content in enumerate(batch["bytes"]):
         filename = batch["filename"][i]
-        
-        # 1. Parsing (CPU Intensive)
-        # We use a helper function to handle PDF/DOCX/HTML logic
-        raw_text, metadata = parse_pdf_bytes(content, filename)
-        
-        # 2. Chunking (CPU)
-        chunks = split_text(raw_text, chunk_size=512, overlap=50)
-        
-        # Add metadata to each chunk
+
+        if MULTIMODAL_ENABLED and _is_image_file(filename):
+            from pipelines.ingestion.loaders.image import parse_image_bytes
+            raw_text, metadata, images = parse_image_bytes(content, filename)
+        else:
+            # PDF (and eventually DOCX/HTML with image support)
+            raw_text, metadata, images = parse_pdf_bytes(
+                content, filename, extract_images=MULTIMODAL_ENABLED
+            )
+
+        # Chunking — multimodal-aware when images are present
+        if MULTIMODAL_ENABLED and images:
+            chunks = split_multimodal(raw_text, images, chunk_size=512, overlap=50)
+        else:
+            chunks = split_text(raw_text, chunk_size=512, overlap=50)
+            for chunk in chunks:
+                chunk["content_type"] = "text"
+
+        # Add document-level metadata to each chunk
         for chunk in chunks:
             chunk["metadata"].update(metadata)
             results.append(chunk)
-            
-    return {"text": [r["text"] for r in results], "metadata": [r["metadata"] for r in results]}
+
+    # Build output batch with all fields needed downstream
+    output = {
+        "text": [r["text"] for r in results],
+        "metadata": [r["metadata"] for r in results],
+        "content_type": [r.get("content_type", "text") for r in results],
+    }
+
+    if MULTIMODAL_ENABLED:
+        output["image_bytes"] = [r.get("image_bytes", b"") for r in results]
+        output["mime_type"] = [r.get("mime_type", "") for r in results]
+
+    return output
+
 
 def main(bucket_name: str, prefix: str):
     """
     Main Orchestration Flow.
     """
     # 1. Read from S3 using Ray Data (Lazy Loading)
-    # This automatically distributes reading across workers
     ds = ray.data.read_binary_files(
         paths=f"s3://{bucket_name}/{prefix}",
         include_paths=True
     )
 
     # 2. Parse & Chunk (Map Phase)
-    # num_cpus=1 tells Ray to reserve 1 CPU core per parsing task
     chunked_ds = ds.map_batches(
         process_batch,
-        batch_size=10, # Process 10 files at a time per worker
+        batch_size=10,
         num_cpus=1
     )
 
-    # 3. FORK: Branch A - Vector Embeddings (GPU Intensive)
-    # We use a Class Actor (BatchEmbedder) to maintain connection to Ray Serve
+    # 3. FORK: Branch A - Vector Embeddings
+    # Use MultimodalBatchEmbedder when multimodal is enabled (Gemini unified space)
+    embedder_cls = MultimodalBatchEmbedder if MULTIMODAL_ENABLED else BatchEmbedder
     vector_ds = chunked_ds.map_batches(
-        BatchEmbedder, 
-        concurrency=5, # Run 5 concurrent embedders
-        num_gpus=0.2, # Each embedder needs minimal GPU access (Ray Serve handles heavy lift)
-        batch_size=100 # Batch 100 chunks for vectorization
+        embedder_cls,
+        concurrency=5,
+        num_gpus=0.2,
+        batch_size=100
     )
-    
+
     # 4. FORK: Branch B - Graph Extraction (LLM Intensive)
-    # This is slower, so we might set higher concurrency or dedicate nodes
     graph_ds = chunked_ds.map_batches(
         GraphExtractor,
         concurrency=10,
-        num_gpus=0.5, # Needs significant LLM inference power
-        batch_size=5 
+        num_gpus=0.5,
+        batch_size=5
     )
 
     # 5. Indexing (Write to DBs)
-    # Trigger execution
+    # When multimodal, use the multimodal Qdrant collection
+    if MULTIMODAL_ENABLED:
+        collection = os.getenv("MULTIMODAL_COLLECTION", "rag_multimodal")
+        os.environ["QDRANT_COLLECTION"] = collection
+
     vector_ds.write_datasource(QdrantIndexer())
     graph_ds.write_datasource(Neo4jIndexer())
 
     print("Ingestion Job Completed Successfully.")
 
 if __name__ == "__main__":
-    # In a real run, these args come from the job submission
     import sys
     main(sys.argv[1], sys.argv[2])

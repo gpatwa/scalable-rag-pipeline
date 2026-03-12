@@ -1,5 +1,5 @@
 # services/api/app/agents/state.py
-from typing import TypedDict, Annotated, List
+from typing import TypedDict, Annotated, List, Union
 import operator
 
 
@@ -12,7 +12,8 @@ class AgentState(TypedDict):
     messages: Annotated[List[dict], operator.add]
 
     # Context retrieved from RAG (Vector + Graph)
-    documents: List[str]
+    # Items are either plain strings (text) or dicts with type/content/url keys (multimodal)
+    documents: List[Union[str, dict]]
 
     # The current question being processed
     current_query: str
