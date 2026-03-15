@@ -319,6 +319,108 @@ The final LangGraph node scores answer quality on a 0-1 scale:
 
 ---
 
+## 9. Context Layer Architecture
+
+The platform includes an optional **Context Layer Architecture** that enriches every RAG response with structured business knowledge. Inspired by enterprise data agent patterns, it adds four overlapping context layers between the retriever and responder nodes, transforming answers from "here's what the document says" to "here's what it means in your business context."
+
+### Feature Flag
+
+Disabled by default — zero impact on existing behavior:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CONTEXT_LAYERS_ENABLED` | `false` | Master toggle for the entire context layer system |
+| `CONTEXT_LAYER1_ENABLED` | `true` | Document metadata & usage signals |
+| `CONTEXT_LAYER2_ENABLED` | `true` | Human annotations & glossary |
+| `CONTEXT_LAYER3_ENABLED` | `true` | Code & pipeline context |
+| `CONTEXT_LAYER4_ENABLED` | `true` | Institutional / business rules |
+| `CONTEXT_LAYERS_MAX_TOKENS` | `1500` | Token budget for context block |
+| `CONTEXT_FRESHNESS_DECAY_DAYS` | `90` | Freshness score half-life (days) |
+
+### Query Flow with Context Layers
+
+```mermaid
+flowchart LR
+    Q["User Query"] --> P["Planner"]
+    P --> R["Retriever\n(vector + graph)"]
+    R --> CE["Context Enricher\n(parallel fetch)"]
+    CE --> Resp["Responder\n(docs + context)"]
+    Resp --> E["Evaluator"]
+
+    subgraph CE_detail["Context Enricher (parallel)"]
+        direction TB
+        L1["Layer 1: Doc Metadata\nfreshness, usage, tags"]
+        L2["Layer 2: Annotations\nglossary, KPIs, notes"]
+        L3["Layer 3: Code Context\nETL, SQL, lineage"]
+        L4["Layer 4: Business Rules\nterminology, org context"]
+    end
+
+    CE -.-> CE_detail
+```
+
+### The Four Layers
+
+**Layer 1 — Document Metadata & Usage Signals**
+- Fetches freshness scores, access frequency, summaries, and tags for retrieved documents
+- Uses exponential decay for freshness scoring (configurable half-life)
+- Updates access tracking as a side effect (last accessed, access count)
+- Stored in `document_metadata` Postgres table, populated during ingestion
+
+**Layer 2 — Human Annotations & Glossary**
+- Matches glossary definitions, KPI formulas, and document notes against query terms
+- Uses ILIKE pattern matching with stop-word filtering
+- Stored in `annotations` Postgres table, managed via Admin API
+
+**Layer 3 — Code & Pipeline Context**
+- Fetches relevant ETL pipeline descriptions, SQL context, API endpoint docs, and data lineage
+- Includes upstream/downstream dependency information
+- Stored in `code_context` Postgres table, managed via Admin API
+
+**Layer 4 — Institutional / Business Context**
+- Fetches business rules, organizational terminology, and role-specific context
+- Filtered by `applies_to_roles` matching the requesting user's role
+- Priority-ordered (higher priority rules surface first)
+- Stored in `business_context` Postgres table, managed via Admin API
+
+### Token Budget & Priority
+
+The assembler merges all layer outputs under a configurable token budget (default 1500 tokens). When the budget is exceeded, layers are prioritized:
+
+1. **Business Rules** (highest priority — domain-critical definitions)
+2. **Annotations** (glossary terms directly relevant to the query)
+3. **Metadata** (document freshness and usage signals)
+4. **Code Context** (pipeline and lineage information)
+
+### Admin API
+
+All context layer data is managed through REST endpoints at `/api/v1/context/`:
+
+- **Annotations**: CRUD for glossary terms, KPI definitions, and document notes
+- **Business Rules**: CRUD for terminology, business rules, role-specific context
+- **Code Context**: CRUD for ETL pipeline docs, SQL descriptions, data lineage
+- **Document Metadata**: Read-only (auto-populated during ingestion)
+
+See [API Reference](api-reference.md#context-layer-admin-api) for full endpoint documentation.
+
+### Data Model
+
+All four tables are tenant-scoped and auto-created on startup via SQLAlchemy:
+
+```
+services/api/app/context/
+├── __init__.py
+├── models.py              # 4 Postgres table models
+├── base.py                # ContextLayerProvider protocol
+├── layer1_metadata.py     # Document metadata & usage
+├── layer2_annotations.py  # Glossary, KPIs, notes
+├── layer3_code.py         # Code/pipeline context
+├── layer4_business.py     # Business rules, terminology
+├── assembler.py           # Orchestrates all layers (parallel fetch + token budget)
+└── manager.py             # CRUD operations for admin API
+```
+
+---
+
 ## Component Summary
 
 | Component | AWS | Azure | Purpose |

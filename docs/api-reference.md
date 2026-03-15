@@ -280,6 +280,83 @@ In split-plane deployment, the control plane (`services/control-plane/`, port 80
 
 ---
 
+## Context Layer Admin API
+
+When `CONTEXT_LAYERS_ENABLED=true`, these endpoints manage the structured business knowledge used to enrich RAG responses. All endpoints are tenant-scoped via JWT authentication.
+
+### Annotations (Layer 2 — Glossary, KPIs, Notes)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/context/annotations` | JWT | Create a glossary term, KPI definition, or note |
+| `GET` | `/api/v1/context/annotations` | JWT | List annotations (optional `?type=glossary\|kpi\|description\|note`) |
+| `GET` | `/api/v1/context/annotations/{id}` | JWT | Get a single annotation |
+| `PUT` | `/api/v1/context/annotations/{id}` | JWT | Update an annotation |
+| `DELETE` | `/api/v1/context/annotations/{id}` | JWT | Delete an annotation |
+
+**Create Example:**
+```bash
+curl -X POST http://localhost:8000/api/v1/context/annotations \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "annotation_type": "glossary",
+        "key": "churn rate",
+        "value": "Percentage of customers who stop using our service within a given period. Calculated as (lost customers / total customers at start) * 100."
+    }'
+```
+
+### Business Rules (Layer 4 — Terminology, Rules, Org Context)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/context/business-rules` | JWT | Create a business rule or terminology entry |
+| `GET` | `/api/v1/context/business-rules` | JWT | List rules (optional `?type=terminology\|business_rule\|role_context\|org_structure`) |
+| `GET` | `/api/v1/context/business-rules/{id}` | JWT | Get a single rule |
+| `PUT` | `/api/v1/context/business-rules/{id}` | JWT | Update a rule |
+| `DELETE` | `/api/v1/context/business-rules/{id}` | JWT | Delete a rule |
+
+**Create Example:**
+```bash
+curl -X POST http://localhost:8000/api/v1/context/business-rules \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "context_type": "terminology",
+        "key": "ARR",
+        "value": "Annual Recurring Revenue. Includes all subscription revenue normalized to a 12-month period. Excludes one-time fees and professional services.",
+        "applies_to_roles": ["finance", "executive"],
+        "priority": 10
+    }'
+```
+
+### Code Context (Layer 3 — ETL, SQL, Data Lineage)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/context/code-context` | JWT | Create a code/pipeline context entry |
+| `GET` | `/api/v1/context/code-context` | JWT | List entries (optional `?type=etl_pipeline\|sql_query\|api_endpoint\|data_lineage`) |
+| `GET` | `/api/v1/context/code-context/{id}` | JWT | Get a single entry |
+| `PUT` | `/api/v1/context/code-context/{id}` | JWT | Update an entry |
+| `DELETE` | `/api/v1/context/code-context/{id}` | JWT | Delete an entry |
+
+### Document Metadata (Layer 1 — Read-Only)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/context/metadata` | JWT | List document metadata (auto-populated during ingestion) |
+| `GET` | `/api/v1/context/metadata/{document_id}` | JWT | Get metadata for a specific document |
+
+### Streaming Event
+
+When context layers are enabled, the chat stream includes an additional event:
+
+| Event Type | Description |
+|------------|-------------|
+| `context_layers` | Business context assembled from all enabled layers (glossary, rules, metadata) |
+
+---
+
 ## Data Plane API (Split-Plane Mode)
 
 In split-plane deployment, the data plane (`services/data-plane/`, port 8080) exposes query processing endpoints. These are called by the control plane proxy, not directly by end users.

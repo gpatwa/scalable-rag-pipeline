@@ -73,10 +73,11 @@ Client  -->  Chat UI (built-in SPA)
   LangGraph   Cache     Memory
   Agent       (Redis)   (Postgres)
      |
-     +-- Planner    -- intent classification
-     +-- Retriever  -- hybrid vector + graph search + re-ranking
-     +-- Responder  -- LLM answer synthesis
-     +-- Evaluator  -- answer quality scoring
+     +-- Planner           -- intent classification
+     +-- Retriever         -- hybrid vector + graph search + re-ranking
+     +-- Context Enricher  -- business glossary, metadata, code/pipeline context (optional)
+     +-- Responder         -- LLM answer synthesis (docs + business context)
+     +-- Evaluator         -- answer quality scoring
                 |
      +----------+---------+
      v          v         v
@@ -122,6 +123,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 - **Multi-cloud** --- identical codebase runs on AWS EKS or Azure AKS
 - **Multi-tenant** --- per-tenant data isolation, config, rate limits, and auth
 - **Control plane / data plane** --- SaaS-ready split with data residency, mTLS, per-tenant rate limiting
+- **Context layer enrichment** --- optional 4-layer business context (glossary, metadata, code/pipeline, business rules) injected at query time
 - **Provider-abstraction** --- every component (LLM, storage, vector DB, secrets, reranker) is swappable via env vars
 
 ### Provider Abstraction
@@ -131,6 +133,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | LLM | `LLM_PROVIDER` | `ray` (self-hosted vLLM), `openai` |
 | Embeddings | `EMBED_PROVIDER` / `EMBED_MODEL` | `ray` + `nomic-embed-text`, `openai` + `text-embedding-3-small` |
 | Re-ranker | `RERANKER_PROVIDER` | `none`, `llm` (LLM-based scoring), `cross_encoder` (dedicated model) |
+| Context Layers | `CONTEXT_LAYERS_ENABLED` | `false` (off), `true` (glossary, metadata, code, business rules) |
 | Vector DB | `VECTORDB_PROVIDER` | `qdrant` |
 | Graph DB | `GRAPHDB_PROVIDER` | `neo4j`, `none` (disable) |
 | Storage | `STORAGE_PROVIDER` | `s3` (AWS), `azure_blob` (Azure) |
@@ -184,7 +187,8 @@ scalable-rag-pipeline/
 +-- services/
 |   +-- api/                      # Monolith: FastAPI backend + Chat UI
 |   |   +-- app/
-|   |   |   +-- agents/           # LangGraph nodes (planner, retriever, responder, evaluator)
+|   |   |   +-- agents/           # LangGraph nodes (planner, retriever, context_enricher, responder, evaluator)
+|   |   |   +-- context/          # Context layer architecture (glossary, metadata, business rules, code context)
 |   |   |   +-- clients/          # Provider-abstracted clients
 |   |   |   |   +-- vectordb/     # Qdrant (Protocol + Factory)
 |   |   |   |   +-- graphdb/      # Neo4j (Protocol + Factory)
