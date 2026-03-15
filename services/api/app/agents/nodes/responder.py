@@ -39,6 +39,11 @@ async def generate_node(state: AgentState) -> dict:
     if step_results:
         context_str += "\n\nPrevious Step Results:\n" + "\n---\n".join(step_results)
 
+    # Include context layers (business rules, glossary, metadata)
+    context_layers = state.get("context_layers", "")
+    if context_layers:
+        context_str += f"\n\n--- Business Context ---\n{context_layers}"
+
     # Include long-term user memories
     user_memories = state.get("user_memories", [])
     if user_memories:

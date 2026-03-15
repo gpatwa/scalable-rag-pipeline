@@ -47,3 +47,6 @@ class AgentState(TypedDict):
 
     # Pre-computed query embedding from semantic cache check (avoids duplicate embed call)
     query_embedding: List[float]
+
+    # Assembled context from context layers (business rules, glossary, metadata)
+    context_layers: str

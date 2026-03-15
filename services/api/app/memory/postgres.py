@@ -43,6 +43,12 @@ class UserMemory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# Import context layer models so Base.metadata.create_all() creates their tables
+try:
+    from app.context.models import DocumentMetadata, Annotation, CodeContext, BusinessContext  # noqa: F401
+except ImportError:
+    pass  # Context layer not installed (optional)
+
 # 3. Async Engine & Session
 #    The engine is lazily initialised so that secrets injected via
 #    Key Vault during the lifespan hook are available before the first

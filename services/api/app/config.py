@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     MAX_IMAGE_SIZE_MB: int = 10                # Skip images larger than this
 
     # -----------------------------------------------------------------
+    # Context Layers (Enterprise Knowledge Fabric)
+    # -----------------------------------------------------------------
+    CONTEXT_LAYERS_ENABLED: bool = False       # Master switch (default off)
+    CONTEXT_LAYER1_ENABLED: bool = True        # Document metadata & usage
+    CONTEXT_LAYER2_ENABLED: bool = True        # Annotations & glossary
+    CONTEXT_LAYER3_ENABLED: bool = True        # Code & pipeline context
+    CONTEXT_LAYER4_ENABLED: bool = True        # Business context
+    CONTEXT_LAYERS_MAX_TOKENS: int = 1500      # Token budget for context block
+    CONTEXT_FRESHNESS_DECAY_DAYS: int = 90     # Freshness score half-life in days
+
+    # -----------------------------------------------------------------
     # Security & Authentication
     # -----------------------------------------------------------------
     JWT_SECRET_KEY: Optional[str] = None  # Fetched from Key Vault at runtime

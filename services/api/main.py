@@ -16,7 +16,7 @@ from app.clients.storage.factory import create_storage_client
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
-from app.routes import chat, upload, health, auth, system, documents
+from app.routes import chat, upload, health, auth, system, documents, context
 from app.routes.health import set_clients as set_health_clients
 from app.config import settings
 
@@ -155,6 +155,13 @@ async def lifespan(app: FastAPI):
     set_semantic_vectordb(vectordb_client)
     set_health_clients(vectordb_client, graphdb_client)
 
+    # 5. Context Layers — init assembler if enabled
+    if settings.CONTEXT_LAYERS_ENABLED:
+        from app.context.assembler import ContextAssembler
+        from app.agents.nodes.context_enricher import set_assembler
+        set_assembler(ContextAssembler())
+        logger.info("Context layers enabled — assembler initialized")
+
     # Load per-tenant configurations
     from app.tenants.registry import tenant_registry
     await tenant_registry.load(source=settings.TENANT_CONFIG_SOURCE)
@@ -207,6 +214,7 @@ app.include_router(upload.router, prefix="/api/v1/upload", tags=["Upload"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["Documents"])
+app.include_router(context.router, prefix="/api/v1/context", tags=["Context"])
 
 # Serve Chat UI at root "/"
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

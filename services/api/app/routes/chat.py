@@ -139,6 +139,7 @@ async def chat_stream(
         retry_count=0,
         user_memories=user_memories,
         query_embedding=query_embedding,  # Reuse embedding from cache check
+        context_layers="",  # Populated by context_enricher node (if enabled)
     )
 
     # 5. Define Generator for Streaming Response
@@ -226,6 +227,16 @@ async def chat_stream(
                                 }
                                 for d in image_docs
                             ],
+                            "session_id": session_id,
+                        }) + "\n"
+
+                # Stream context layers to frontend (business context, glossary)
+                if node_name == "context_enricher":
+                    ctx_layers = node_data.get("context_layers", "")
+                    if ctx_layers:
+                        yield json.dumps({
+                            "type": "context_layers",
+                            "content": ctx_layers,
                             "session_id": session_id,
                         }) + "\n"
 

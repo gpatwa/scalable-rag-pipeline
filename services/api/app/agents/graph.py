@@ -86,8 +86,14 @@ workflow.add_conditional_edges("planner", route_after_planner, {
     "tool_node": "tool_node",
 })
 
-# After retrieval → respond
-workflow.add_edge("retriever", "responder")
+# After retrieval → context enrichment (if enabled) → respond
+if settings.CONTEXT_LAYERS_ENABLED:
+    from app.agents.nodes.context_enricher import context_enricher_node
+    workflow.add_node("context_enricher", context_enricher_node)
+    workflow.add_edge("retriever", "context_enricher")
+    workflow.add_edge("context_enricher", "responder")
+else:
+    workflow.add_edge("retriever", "responder")
 
 # After tool execution → back to planner (ReAct loop)
 workflow.add_edge("tool_node", "planner")
