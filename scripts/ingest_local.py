@@ -6,8 +6,13 @@ Usage:
     python scripts/ingest_local.py <file_or_dir>      # ingest a file or directory
     python scripts/ingest_local.py --sample            # ingest built-in sample data
 
-Supports: .txt, .md, .pdf, .docx
-Performs:  parse → chunk → embed (Ollama) → upsert Qdrant → extract entities → Neo4j
+Supports: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .gif, .webp
+Performs:  parse → chunk → embed (Ollama/Gemini) → upsert Qdrant → extract entities → Neo4j
+
+When MULTIMODAL_ENABLED=true:
+  - Images are embedded via Gemini into the rag_multimodal collection
+  - PDFs have images extracted and embedded alongside text
+  - Standalone image files (.png, .jpg, etc.) are supported
 """
 import asyncio
 import argparse
@@ -25,6 +30,12 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+MULTIMODAL_ENABLED = os.getenv("MULTIMODAL_ENABLED", "false").lower() == "true"
+
+# Extend supported extensions when multimodal is on
+if MULTIMODAL_ENABLED:
+    SUPPORTED_EXTENSIONS = SUPPORTED_EXTENSIONS | IMAGE_EXTENSIONS
 
 # ── Sample data for quick testing ────────────────────────────────────────────
 SAMPLE_DOCUMENTS = [
@@ -141,6 +152,104 @@ def parse_file(filepath: str) -> str:
         return parse_text(filepath)
     else:
         raise ValueError(f"Unsupported file type: {ext}. Supported: {SUPPORTED_EXTENSIONS}")
+
+
+# ── Multimodal helpers ──────────────────────────────────────────────────────
+
+def _get_gemini_client():
+    """Lazy-init a google-genai Client for multimodal embedding."""
+    if not hasattr(_get_gemini_client, "_client"):
+        from google import genai
+        api_key = settings.GOOGLE_API_KEY
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY required for multimodal ingestion")
+        _get_gemini_client._client = genai.Client(api_key=api_key)
+        _get_gemini_client._model = getattr(settings, "GEMINI_EMBED_MODEL", "gemini-embedding-2-preview")
+        _get_gemini_client._dims = getattr(settings, "GEMINI_EMBED_DIMENSIONS", 768)
+        logger.info(f"  Gemini client initialized (model={_get_gemini_client._model}, dims={_get_gemini_client._dims})")
+    return _get_gemini_client._client
+
+
+async def embed_image_gemini(image_bytes: bytes, mime_type: str) -> list[float]:
+    """Embed a single image via Gemini."""
+    from google.genai import types
+    client = _get_gemini_client()
+    part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+    result = client.models.embed_content(
+        model=_get_gemini_client._model,
+        contents=part,
+        config=types.EmbedContentConfig(
+            task_type="RETRIEVAL_DOCUMENT",
+            output_dimensionality=_get_gemini_client._dims,
+        ),
+    )
+    return list(result.embeddings[0].values)
+
+
+async def embed_texts_gemini(texts: list[str]) -> list[list[float]]:
+    """Embed texts via Gemini in batches of 100 with rate-limit retry."""
+    import time
+    from google.genai import types
+    client = _get_gemini_client()
+    all_embeddings = []
+    batch_size = 100
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        batch_num = i // batch_size + 1
+        for attempt in range(5):
+            try:
+                result = client.models.embed_content(
+                    model=_get_gemini_client._model,
+                    contents=batch,
+                    config=types.EmbedContentConfig(
+                        task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=_get_gemini_client._dims,
+                    ),
+                )
+                all_embeddings.extend([list(e.values) for e in result.embeddings])
+                logger.info(f"    Batch {batch_num}/{total_batches}: embedded {len(batch)} chunks")
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 45 * (attempt + 1)
+                    logger.info(f"    Rate limited, waiting {wait}s before retry...")
+                    time.sleep(wait)
+                else:
+                    raise
+    return all_embeddings
+
+
+def upsert_qdrant_multimodal(
+    chunks: list[dict], embeddings: list[list[float]], filename: str, tenant_id: str = "default"
+):
+    """Insert multimodal chunks (text + image) into the rag_multimodal collection."""
+    from qdrant_client import QdrantClient
+    from qdrant_client.http import models
+
+    collection = settings.MULTIMODAL_COLLECTION
+    client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+
+    points = []
+    for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+        if emb is None:
+            continue
+        payload = {
+            "text": chunk.get("text", ""),
+            "content_type": chunk.get("content_type", "text"),
+            "metadata": {"filename": filename, "chunk_index": i},
+            "tenant_id": tenant_id,
+        }
+        if chunk.get("content_type") == "image":
+            payload["image_mime_type"] = chunk.get("mime_type", "image/png")
+        points.append(
+            models.PointStruct(id=str(uuid.uuid4()), vector=emb, payload=payload)
+        )
+
+    batch_size = 100
+    for i in range(0, len(points), batch_size):
+        client.upsert(collection_name=collection, points=points[i : i + batch_size])
+    logger.info(f"  Qdrant ({collection}): upserted {len(points)} vectors (tenant={tenant_id})")
 
 
 # ── Chunking ─────────────────────────────────────────────────────────────────
@@ -302,10 +411,31 @@ async def create_neo4j_entities(text: str, filename: str, tenant_id: str = "defa
     logger.info(f"  ✅ Neo4j: merged {len(triples)} triples")
 
 
+# ── Multimodal document ingestion ───────────────────────────────────────────
+async def ingest_image_file(filepath: str, tenant_id: str = "default"):
+    """Ingest a standalone image file via Gemini multimodal embedding."""
+    filename = os.path.basename(filepath)
+    with open(filepath, "rb") as f:
+        image_bytes = f.read()
+
+    ext = os.path.splitext(filepath)[1].lower()
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+    mime_type = mime_map.get(ext, "image/png")
+
+    logger.info(f"\n🖼️  Ingesting image: {filename} ({len(image_bytes)} bytes, tenant={tenant_id})")
+
+    # Embed image via Gemini
+    embedding = await embed_image_gemini(image_bytes, mime_type)
+    chunk = {"text": filename, "content_type": "image", "mime_type": mime_type}
+    upsert_qdrant_multimodal([chunk], [embedding], filename, tenant_id=tenant_id)
+    logger.info(f"  Image embedded ({len(embedding)} dims) and indexed")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 async def ingest_document(text: str, filename: str, tenant_id: str = "default"):
     if not text or not text.strip():
-        logger.warning(f"  ⚠️  Skipping {filename} — empty content")
+        logger.warning(f"  Skipping {filename} — empty content")
         return
 
     logger.info(f"\n📄 Ingesting: {filename} ({len(text)} chars, tenant={tenant_id})")
@@ -314,14 +444,18 @@ async def ingest_document(text: str, filename: str, tenant_id: str = "default"):
     chunks = chunk_text(text)
     logger.info(f"  Chunked into {len(chunks)} pieces")
 
-    # 2. Embed
-    logger.info(f"  Embedding {len(chunks)} chunks via Ollama...")
-    embeddings = await embed_texts(chunks)
+    # 2. Embed — use Gemini when multimodal is enabled (shared vector space)
+    if MULTIMODAL_ENABLED:
+        logger.info(f"  Embedding {len(chunks)} chunks via Gemini...")
+        embeddings = await embed_texts_gemini(chunks)
+        chunk_dicts = [{"text": c, "content_type": "text"} for c in chunks]
+        upsert_qdrant_multimodal(chunk_dicts, embeddings, filename, tenant_id=tenant_id)
+    else:
+        logger.info(f"  Embedding {len(chunks)} chunks via Ollama...")
+        embeddings = await embed_texts(chunks)
+        upsert_qdrant(chunks, embeddings, filename, tenant_id=tenant_id)
 
-    # 3. Upsert to Qdrant (tagged with tenant_id)
-    upsert_qdrant(chunks, embeddings, filename, tenant_id=tenant_id)
-
-    # 4. Extract entities → Neo4j
+    # 3. Extract entities → Neo4j
     logger.info("  Extracting entities via LLM...")
     await create_neo4j_entities(text, filename, tenant_id=tenant_id)
 
@@ -380,10 +514,14 @@ async def main():
         logger.info("=" * 55)
         for filepath in files:
             try:
-                text = parse_file(filepath)
-                await ingest_document(text, os.path.basename(filepath), tenant_id=tenant_id)
+                ext = os.path.splitext(filepath)[1].lower()
+                if ext in IMAGE_EXTENSIONS and MULTIMODAL_ENABLED:
+                    await ingest_image_file(filepath, tenant_id=tenant_id)
+                else:
+                    text = parse_file(filepath)
+                    await ingest_document(text, os.path.basename(filepath), tenant_id=tenant_id)
             except Exception as e:
-                logger.error(f"  ❌ Failed to process {filepath}: {e}")
+                logger.error(f"  Failed to process {filepath}: {e}")
     else:
         parser.print_help()
         sys.exit(1)

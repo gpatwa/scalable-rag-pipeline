@@ -15,6 +15,11 @@ env:
   # Re-ranking — LLM-based scoring for staging (no extra infra needed)
   RERANKER_PROVIDER: "llm"
   RERANKER_SCORE_THRESHOLD: "0.3"
+  # Multimodal RAG (Gemini embeddings)
+  MULTIMODAL_ENABLED: "true"
+  GEMINI_EMBED_MODEL: "gemini-embedding-2-preview"
+  GEMINI_EMBED_DIMENSIONS: "768"
+  # GOOGLE_API_KEY: loaded from app-env-secret
   # Agentic pipeline — tool endpoints
   SANDBOX_URL: "http://sandbox-service:8080/execute"
   # TAVILY_API_KEY: loaded from app-env-secret

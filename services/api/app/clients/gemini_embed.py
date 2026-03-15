@@ -68,11 +68,21 @@ class GeminiEmbedClient:
         )
         return list(result.embeddings[0].values)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts in a single batch call."""
+        """Embed multiple texts in batches of 100 (Gemini API limit)."""
         self._ensure_client()
-        result = self.client.models.embed_content(
+        all_embeddings = []
+        batch_size = 100
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            result = await self._embed_batch(batch)
+            all_embeddings.extend([list(e.values) for e in result.embeddings])
+        return all_embeddings
+
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    async def _embed_batch(self, texts: list[str]):
+        """Embed a single batch (up to 100 texts) with retry."""
+        return self.client.models.embed_content(
             model=self.model,
             contents=texts,
             config=types.EmbedContentConfig(
@@ -80,7 +90,6 @@ class GeminiEmbedClient:
                 output_dimensionality=self.dimensions,
             ),
         )
-        return [list(e.values) for e in result.embeddings]
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def embed_image(self, image_bytes: bytes, mime_type: str = "image/png") -> list[float]:

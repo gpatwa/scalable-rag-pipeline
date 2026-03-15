@@ -1,6 +1,6 @@
 # Makefile
 
-.PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test \
+.PHONY: help install dev up down stop init deploy infra build bootstrap init-cloud smoke-test verify destroy test ingest \
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
        verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
@@ -15,6 +15,7 @@ help:
 	@echo "    make up            - Start local DBs (Docker)"
 	@echo "    make init          - Initialize local DBs, collections, indexes"
 	@echo "    make dev           - Run FastAPI server locally (hot reload)"
+	@echo "    make ingest FILE=x - Ingest a file, directory, or --sample"
 	@echo "    make down          - Stop local DBs (Docker only)"
 	@echo "    make stop          - Stop everything (API + Docker + stale processes)"
 	@echo "    make test          - Run tests"
@@ -98,6 +99,22 @@ init:
 
 dev:
 	cd services/api && uvicorn main:app --reload --host 0.0.0.0 --port 8000 --env-file ../../.env
+
+ingest:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage:"; \
+		echo "  make ingest FILE=report.pdf          # ingest a file"; \
+		echo "  make ingest FILE=./docs/             # ingest a directory"; \
+		echo "  make ingest FILE=--sample            # ingest sample data"; \
+		echo "  make ingest FILE=photo.png            # ingest image (multimodal)"; \
+		exit 1; \
+	fi
+	@set -a && . ./.env && set +a && \
+	if [ "$(FILE)" = "--sample" ]; then \
+		python3 scripts/ingest_local.py --sample; \
+	else \
+		python3 scripts/ingest_local.py "$(FILE)"; \
+	fi
 
 test:
 	pytest
