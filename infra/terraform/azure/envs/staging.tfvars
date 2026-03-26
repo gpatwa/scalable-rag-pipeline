@@ -16,3 +16,5 @@ vnet_cidr           = "10.1.0.0/16"   # Non-overlapping with prod
 # jwt_secret_key  = ""
 # neo4j_password  = ""
 # openai_api_key  = ""
+# gemini_api_key  = ""   # For multimodal RAG (Gemini embeddings)
+# tavily_api_key  = ""   # For web search tool
