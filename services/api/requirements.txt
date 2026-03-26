@@ -54,3 +54,4 @@ azure-keyvault-secrets>=4.8.0  # Azure Key Vault secrets
 httpx==0.26.0
 tenacity==8.2.3
 aiohttp>=3.9.0  # Required by azure-identity async (DefaultAzureCredential)
+psycopg2-binary==2.9.10  # Sync PostgreSQL driver for analytics engine
