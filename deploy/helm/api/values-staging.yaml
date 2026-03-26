@@ -32,6 +32,10 @@ env:
   ANALYTICS_QUERY_TIMEOUT: "10"
   ANALYTICS_MAX_ROWS: "1000"
   # ANALYTICS_DB_URL: falls back to DATABASE_URL if not set (acceptable for staging)
+  # Override K8s auto-injected service env vars (they conflict with Pydantic int parsing)
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"
+  NEO4J_URI: "bolt://neo4j:7687"
   # Agentic pipeline — tool endpoints
   SANDBOX_URL: "http://sandbox-service:8080/execute"
   # TAVILY_API_KEY: loaded from Key Vault via app-env-secret
