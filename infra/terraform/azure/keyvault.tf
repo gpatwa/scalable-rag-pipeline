@@ -88,3 +88,19 @@ resource "azurerm_key_vault_secret" "openai_api_key" {
   value        = var.openai_api_key
   key_vault_id = azurerm_key_vault.main.id
 }
+
+# Google Gemini API key — for multimodal embeddings (only if provided)
+resource "azurerm_key_vault_secret" "gemini_api_key" {
+  count        = var.gemini_api_key != "" ? 1 : 0
+  name         = "gemini-api-key"
+  value        = var.gemini_api_key
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+# Tavily API key — for web search tool (only if provided)
+resource "azurerm_key_vault_secret" "tavily_api_key" {
+  count        = var.tavily_api_key != "" ? 1 : 0
+  name         = "tavily-api-key"
+  value        = var.tavily_api_key
+  key_vault_id = azurerm_key_vault.main.id
+}

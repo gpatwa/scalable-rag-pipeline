@@ -241,7 +241,63 @@ az postgres flexible-server stop --name rag-postgres --resource-group rag-platfo
 
 ---
 
-## 10. Subsequent Deploys
+## 10. Enable Optional Features
+
+### Multimodal RAG (Gemini Embedding)
+
+Store the Gemini API key in Key Vault via Terraform:
+
+```hcl
+# infra/terraform/azure/envs/staging.tfvars
+gemini_api_key = "your-gemini-api-key"
+```
+
+Run `terraform apply` to store the secret, then re-bootstrap to inject it into the K8s secret. The feature is enabled by default in `values-staging.yaml` (`MULTIMODAL_ENABLED: "true"`).
+
+### Context Layer Architecture
+
+Enabled by default in staging. Seed initial context data after deployment:
+
+```bash
+# Port-forward to the API pod
+kubectl port-forward svc/api-service 8080:80
+
+# Seed glossary, business rules, code context
+curl -X POST http://localhost:8080/api/v1/context/annotations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"annotation_type": "glossary", "key": "ARR", "value": "Annual Recurring Revenue"}'
+```
+
+### Data Analytics Agent
+
+Enabled by default in staging. Load a dataset into Postgres:
+
+```bash
+# Port-forward to Postgres
+kubectl port-forward svc/postgres-service 5432:5432
+
+# Seed the Olist e-commerce dataset (or any CSV dataset)
+DATABASE_URL=postgresql://ragadmin:$DB_PASSWORD@localhost:5432/ragdb \
+  python3 scripts/seed_olist.py
+
+# Or load any CSV dataset with auto-schema discovery
+python3 scripts/seed_dataset.py data/your-data/ --name your-dataset
+```
+
+Then ask data questions in the Chat UI: "What was the revenue trend by month?"
+
+### Key Vault Secrets for Features
+
+| Feature | Key Vault Secret | Terraform Variable | Required |
+|---------|------------------|--------------------|----------|
+| Multimodal | `gemini-api-key` | `gemini_api_key` | When MULTIMODAL_ENABLED=true |
+| Web Search | `tavily-api-key` | `tavily_api_key` | When using web_search tool |
+| OpenAI LLM | `openai-api-key` | `openai_api_key` | When LLM_PROVIDER=openai |
+
+---
+
+## 11. Subsequent Deploys
 
 ```bash
 make build-azure        # Rebuild Docker image

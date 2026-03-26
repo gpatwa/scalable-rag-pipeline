@@ -62,6 +62,20 @@ variable "openai_api_key" {
   default     = ""
 }
 
+variable "gemini_api_key" {
+  description = "Google Gemini API key for multimodal embeddings (leave empty to skip)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "tavily_api_key" {
+  description = "Tavily API key for web search tool (leave empty to skip)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "kubernetes_version" {
   description = "Kubernetes version for AKS"
   type        = string

@@ -57,7 +57,10 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
     referenced_tables = set(_TABLE_REF_PATTERN.findall(sql_stripped))
     # Normalize to lowercase
     referenced_lower = {t.lower() for t in referenced_tables}
-    unknown = referenced_lower - valid_tables - {"lateral", "unnest"}  # exclude SQL keywords mismatched
+    # Extract CTE aliases (WITH alias AS ...) to exclude from unknown check
+    cte_aliases = {m.lower() for m in re.findall(r'\bWITH\s+(\w+)\s+AS\b', sql_stripped, re.IGNORECASE)}
+    cte_aliases |= {m.lower() for m in re.findall(r',\s*(\w+)\s+AS\s*\(', sql_stripped, re.IGNORECASE)}
+    unknown = referenced_lower - valid_tables - cte_aliases - {"lateral", "unnest"}  # exclude SQL keywords & CTEs
     if unknown:
         return False, f"Unknown tables referenced: {', '.join(sorted(unknown))}"
 

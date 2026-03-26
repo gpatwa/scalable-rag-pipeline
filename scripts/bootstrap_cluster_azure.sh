@@ -46,7 +46,18 @@ REDIS_PORT=$(terraform output -raw redis_ssl_port 2>/dev/null || echo "6380")
 REDIS_KEY=$(terraform output -raw redis_primary_key 2>/dev/null || echo "")
 STORAGE_ACCOUNT=$(terraform output -raw storage_account_name 2>/dev/null || echo "")
 API_IDENTITY_CLIENT_ID=$(terraform output -raw api_identity_client_id 2>/dev/null || echo "")
+KEY_VAULT_URL=$(terraform output -raw key_vault_url 2>/dev/null || echo "")
 cd "$PROJECT_DIR"
+
+# Fetch optional API keys from Key Vault (if configured)
+GOOGLE_API_KEY="${GOOGLE_API_KEY:-}"
+TAVILY_API_KEY="${TAVILY_API_KEY:-}"
+if [ -n "$KEY_VAULT_URL" ]; then
+    KV_NAME=$(echo "$KEY_VAULT_URL" | sed 's|https://||;s|\.vault.*||')
+    GOOGLE_API_KEY=$(az keyvault secret show --vault-name "$KV_NAME" --name "gemini-api-key" --query "value" -o tsv 2>/dev/null || echo "")
+    TAVILY_API_KEY=$(az keyvault secret show --vault-name "$KV_NAME" --name "tavily-api-key" --query "value" -o tsv 2>/dev/null || echo "")
+    echo "  Fetched API keys from Key Vault: ${KV_NAME}"
+fi
 
 # Read DB password from tfvars (or prompt)
 DB_PASSWORD="${DB_PASSWORD:-}"
@@ -58,14 +69,22 @@ fi
 DATABASE_URL="postgresql+asyncpg://ragadmin:${DB_PASSWORD}@${POSTGRES_FQDN}:5432/ragdb"
 REDIS_URL="rediss://:${REDIS_KEY}@${REDIS_HOST}:${REDIS_PORT}/0"
 
+SECRET_ARGS=(
+    --from-literal=DATABASE_URL="$DATABASE_URL"
+    --from-literal=REDIS_URL="$REDIS_URL"
+    --from-literal=JWT_SECRET_KEY="$(openssl rand -hex 32)"
+    --from-literal=NEO4J_PASSWORD="password"
+    --from-literal=AZURE_STORAGE_ACCOUNT_NAME="$STORAGE_ACCOUNT"
+    --from-literal=CLOUD_PROVIDER="azure"
+    --from-literal=STORAGE_PROVIDER="azure_blob"
+    --from-literal=SECRETS_PROVIDER="azure_kv"
+)
+[ -n "$KEY_VAULT_URL" ] && SECRET_ARGS+=(--from-literal=AZURE_KEY_VAULT_URL="$KEY_VAULT_URL")
+[ -n "$GOOGLE_API_KEY" ] && SECRET_ARGS+=(--from-literal=GOOGLE_API_KEY="$GOOGLE_API_KEY")
+[ -n "$TAVILY_API_KEY" ] && SECRET_ARGS+=(--from-literal=TAVILY_API_KEY="$TAVILY_API_KEY")
+
 kubectl create secret generic app-env-secret \
-    --from-literal=DATABASE_URL="$DATABASE_URL" \
-    --from-literal=REDIS_URL="$REDIS_URL" \
-    --from-literal=JWT_SECRET_KEY="$(openssl rand -hex 32)" \
-    --from-literal=NEO4J_PASSWORD="password" \
-    --from-literal=AZURE_STORAGE_ACCOUNT_NAME="$STORAGE_ACCOUNT" \
-    --from-literal=CLOUD_PROVIDER="azure" \
-    --from-literal=STORAGE_PROVIDER="azure_blob" \
+    "${SECRET_ARGS[@]}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
 echo "  Secret app-env-secret created/updated"
@@ -131,8 +150,18 @@ echo "Step 7: Deploying Backend API..."
 ACR_URI="${ACR_NAME}.azurecr.io"
 TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "v0.1.0")
 
+# Apply staging overrides if HELM_VALUES_FILE is set or ENV=staging
+HELM_VALUES_FILE="${HELM_VALUES_FILE:-}"
+HELM_EXTRA_VALUES=""
+if [ -n "$HELM_VALUES_FILE" ]; then
+    HELM_EXTRA_VALUES="-f $HELM_VALUES_FILE"
+elif [ "${ENV:-}" = "staging" ]; then
+    HELM_EXTRA_VALUES="-f deploy/helm/api/values-staging.yaml"
+fi
+
 helm upgrade --install api deploy/helm/api \
     -f deploy/helm/api/values-azure.yaml \
+    $HELM_EXTRA_VALUES \
     --set image.repository="${ACR_URI}/rag-backend-api" \
     --set image.tag="${TAG}" \
     --set serviceAccount.annotations."azure\.workload\.identity/client-id"="${API_IDENTITY_CLIENT_ID}" \

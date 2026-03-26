@@ -19,10 +19,22 @@ env:
   MULTIMODAL_ENABLED: "true"
   GEMINI_EMBED_MODEL: "gemini-embedding-2-preview"
   GEMINI_EMBED_DIMENSIONS: "768"
-  # GOOGLE_API_KEY: loaded from app-env-secret
+  # GOOGLE_API_KEY: loaded from Key Vault via app-env-secret
+  # Context Layer Architecture (enterprise knowledge enrichment)
+  CONTEXT_LAYERS_ENABLED: "true"
+  CONTEXT_LAYER1_ENABLED: "true"   # Document metadata & usage
+  CONTEXT_LAYER2_ENABLED: "true"   # Annotations & glossary
+  CONTEXT_LAYER3_ENABLED: "true"   # Code & pipeline context
+  CONTEXT_LAYER4_ENABLED: "true"   # Business context
+  CONTEXT_LAYERS_MAX_TOKENS: "1500"
+  # Data Analytics Agent (text-to-SQL with tables + charts)
+  DATA_ANALYTICS_ENABLED: "true"
+  ANALYTICS_QUERY_TIMEOUT: "10"
+  ANALYTICS_MAX_ROWS: "1000"
+  # ANALYTICS_DB_URL: falls back to DATABASE_URL if not set (acceptable for staging)
   # Agentic pipeline — tool endpoints
   SANDBOX_URL: "http://sandbox-service:8080/execute"
-  # TAVILY_API_KEY: loaded from app-env-secret
+  # TAVILY_API_KEY: loaded from Key Vault via app-env-secret
 
 resources:
   requests:

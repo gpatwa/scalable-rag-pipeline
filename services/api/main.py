@@ -72,6 +72,8 @@ async def _inject_secrets_from_vault():
         "NEO4J_PASSWORD": "neo4j-password",
         "REDIS_PASSWORD": "redis-primary-key",
         "OPENAI_API_KEY": "openai-api-key",
+        "GOOGLE_API_KEY": "gemini-api-key",
+        "TAVILY_API_KEY": "tavily-api-key",
     }
 
     for attr, vault_key in secret_map.items():
