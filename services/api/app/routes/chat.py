@@ -247,15 +247,23 @@ async def chat_stream(
                 # Stream data analytics results
                 if node_name == "data_analytics":
                     sql = node_data.get("data_query_sql", "")
+                    time_ms = node_data.get("data_query_time_ms", 0)
+                    result_json = node_data.get("data_query_result", "")
+                    error = node_data.get("data_query_error", "")
+
+                    logger.info(
+                        "data_analytics event: sql=%d chars, result=%d chars, error=%s",
+                        len(sql), len(result_json), error or "none",
+                    )
+
                     if sql:
                         yield json.dumps({
                             "type": "sql_query",
                             "sql": sql,
-                            "time_ms": node_data.get("data_query_time_ms", 0),
+                            "time_ms": time_ms,
                             "session_id": session_id,
                         }) + "\n"
 
-                    result_json = node_data.get("data_query_result", "")
                     if result_json:
                         try:
                             from app.analytics.formatter import (
@@ -265,7 +273,7 @@ async def chat_stream(
                             chart_spec = suggest_chart_spec(
                                 result_data["columns"],
                                 result_data["rows"],
-                                state.get("current_query", req.message),
+                                req.message,
                             )
                             yield json.dumps({
                                 "type": "data_result",
@@ -279,9 +287,8 @@ async def chat_stream(
                                 "session_id": session_id,
                             }) + "\n"
                         except Exception as fmt_err:
-                            logger.error("Data result formatting error: %s", fmt_err)
+                            logger.error("Data result formatting error: %s", fmt_err, exc_info=True)
 
-                    error = node_data.get("data_query_error", "")
                     if error:
                         yield json.dumps({
                             "type": "data_error",
