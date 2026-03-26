@@ -68,6 +68,9 @@ def init_analytics_engine() -> sa.engine.Engine:
 
     # Strip async driver if present
     db_url = db_url.replace("+asyncpg", "")
+    # Fix SSL param for psycopg2 (asyncpg uses ?ssl=require, psycopg2 uses ?sslmode=require)
+    db_url = db_url.replace("?ssl=require", "?sslmode=require")
+    db_url = db_url.replace("&ssl=require", "&sslmode=require")
 
     timeout_ms = settings.ANALYTICS_QUERY_TIMEOUT * 1000
 
