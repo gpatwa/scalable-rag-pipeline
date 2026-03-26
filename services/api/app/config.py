@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     CONTEXT_FRESHNESS_DECAY_DAYS: int = 90     # Freshness score half-life in days
 
     # -----------------------------------------------------------------
+    # Data Analytics Agent
+    # -----------------------------------------------------------------
+    DATA_ANALYTICS_ENABLED: bool = False       # Master switch (default off)
+    ANALYTICS_DB_URL: Optional[str] = None     # Separate read-only DB (falls back to DATABASE_URL)
+    ANALYTICS_QUERY_TIMEOUT: int = 10          # Max seconds per SQL query
+    ANALYTICS_MAX_ROWS: int = 1000             # Max rows returned per query
+
+    # -----------------------------------------------------------------
     # Security & Authentication
     # -----------------------------------------------------------------
     JWT_SECRET_KEY: Optional[str] = None  # Fetched from Key Vault at runtime

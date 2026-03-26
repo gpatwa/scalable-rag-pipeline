@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RAG Platform</title>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <style>
   :root {
@@ -199,6 +202,89 @@
   .eval-badge.good { background: rgba(78,201,155,0.12); color: var(--green); }
   .eval-badge.poor { background: rgba(229,85,97,0.12); color: var(--red); }
 
+  /* ── Data Analytics ──────────────────────── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 8px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .data-table th {
+    background: var(--surface2);
+    color: var(--accent);
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(124,110,240,0.04); }
+  .data-table .null-val { color: var(--text-dim); font-style: italic; }
+  .row-count {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    text-align: right;
+  }
+  .sql-collapsible {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .sql-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+    user-select: none;
+  }
+  .sql-header:hover { background: rgba(124,110,240,0.06); }
+  .sql-code {
+    display: none;
+    padding: 10px 14px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--green);
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+  .sql-collapsible.open .sql-code { display: block; }
+  .query-time {
+    background: rgba(78,201,155,0.12);
+    color: var(--green);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .chart-container {
+    margin: 8px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow: hidden;
+  }
+
   /* ── Context images (multimodal) ─────────── */
   .context-images {
     display: flex;
@@ -356,9 +442,10 @@
     <h2>Enterprise RAG Assistant</h2>
     <p>Ask questions about your ingested documents. The agent plans, retrieves from vector + graph stores, and synthesizes an answer.</p>
     <div class="suggestions">
+      <button class="suggestion-btn" onclick="askSuggestion(this)">What was the revenue trend by month?</button>
+      <button class="suggestion-btn" onclick="askSuggestion(this)">Top 10 product categories by sales</button>
+      <button class="suggestion-btn" onclick="askSuggestion(this)">Average review score by state</button>
       <button class="suggestion-btn" onclick="askSuggestion(this)">Who founded Acme Corp?</button>
-      <button class="suggestion-btn" onclick="askSuggestion(this)">What tech stack does MedAssist use?</button>
-      <button class="suggestion-btn" onclick="askSuggestion(this)">Who is the VP of Engineering?</button>
     </div>
   </div>
 </div>
@@ -536,7 +623,8 @@ function handleEvent(event, stepsEl, contentEl) {
     const icon = {
       planner: '\u{1F9E0}', retriever: '\u{1F50D}', responder: '\u{2728}',
       tool_node: '\u{1F527}', evaluator: '\u{1F50E}', retry: '\u{1F504}',
-      step_advance: '\u{27A1}'
+      step_advance: '\u{27A1}', data_analytics: '\u{1F4CA}',
+      context_enricher: '\u{1F4DA}'
     }[name] || '\u2699';
     chip.innerHTML = `${icon} ${name} <span class="checkmark">${isRetry ? '!' : '\u2713'}</span>`;
     stepsEl.appendChild(chip);
@@ -567,6 +655,57 @@ function handleEvent(event, stepsEl, contentEl) {
     chip.className = 'step-chip done';
     chip.innerHTML = `\u{27A1} step ${event.current_step + 1} <span class="checkmark">\u2713</span>`;
     stepsEl.appendChild(chip);
+    scrollToBottom();
+  }
+
+  // ── Data Analytics events ─────────────────────
+  if (event.type === 'sql_query') {
+    const card = document.createElement('div');
+    card.className = 'sql-collapsible';
+    card.innerHTML = `
+      <div class="sql-header" onclick="this.parentElement.classList.toggle('open')">
+        <span>\u{1F50D} View SQL</span>
+        <span class="query-time">${event.time_ms || 0}ms</span>
+      </div>
+      <pre class="sql-code">${escapeHtml(event.sql || '')}</pre>`;
+    contentEl.parentElement.insertBefore(card, contentEl);
+    scrollToBottom();
+  }
+
+  if (event.type === 'data_result') {
+    // Render HTML table
+    if (event.table_html) {
+      const tableContainer = document.createElement('div');
+      tableContainer.innerHTML = event.table_html;
+      contentEl.parentElement.insertBefore(tableContainer, contentEl);
+    }
+    // Render Vega-Lite chart if spec provided
+    if (event.chart_spec && typeof vegaEmbed !== 'undefined') {
+      const chartDiv = document.createElement('div');
+      chartDiv.className = 'chart-container';
+      contentEl.parentElement.insertBefore(chartDiv, contentEl);
+      try {
+        vegaEmbed(chartDiv, event.chart_spec, {
+          actions: false,
+          theme: 'dark',
+          config: {
+            background: '#1a1b26',
+            axis: { labelColor: '#8b8fa3', titleColor: '#e1e2e8', gridColor: '#2f3146' },
+            legend: { labelColor: '#8b8fa3', titleColor: '#e1e2e8' },
+            title: { color: '#e1e2e8' },
+            mark: { color: '#7c6ef0' },
+          }
+        });
+      } catch (e) { console.warn('Chart render error:', e); }
+    }
+    scrollToBottom();
+  }
+
+  if (event.type === 'data_error') {
+    const card = document.createElement('div');
+    card.className = 'tool-result-card';
+    card.innerHTML = `<div class="tool-label">\u26A0 Query Error</div><pre>${escapeHtml(event.content || '')}</pre>`;
+    contentEl.parentElement.insertBefore(card, contentEl);
     scrollToBottom();
   }
 

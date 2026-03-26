@@ -162,6 +162,14 @@ async def lifespan(app: FastAPI):
         set_assembler(ContextAssembler())
         logger.info("Context layers enabled — assembler initialized")
 
+    # 6. Data Analytics — init engine if enabled
+    if settings.DATA_ANALYTICS_ENABLED:
+        from app.analytics.engine import init_analytics_engine
+        from app.agents.nodes.data_analytics import set_analytics_llm
+        init_analytics_engine()
+        set_analytics_llm(llm_client)
+        logger.info("Data analytics enabled — engine initialized")
+
     # Load per-tenant configurations
     from app.tenants.registry import tenant_registry
     await tenant_registry.load(source=settings.TENANT_CONFIG_SOURCE)

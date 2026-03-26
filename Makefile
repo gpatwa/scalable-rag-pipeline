@@ -119,6 +119,32 @@ ingest:
 test:
 	pytest
 
+seed-context:
+	python3 scripts/seed_context_layers.py
+
+seed-olist:
+	python3 scripts/seed_olist.py
+
+# Generic dataset loader — works with any CSV dataset
+# Usage:
+#   make seed-dataset NAME=olist PATH=data/olist/
+#   make seed-dataset NAME=sales KAGGLE=username/sales-data
+#   make seed-dataset NAME=hr PATH=data/hr/ PREFIX=hr_
+seed-dataset:
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage:"; \
+		echo "  make seed-dataset NAME=olist PATH=data/olist/"; \
+		echo "  make seed-dataset NAME=sales KAGGLE=user/dataset"; \
+		echo "  make seed-dataset NAME=hr PATH=data/hr/ PREFIX=hr_"; \
+		exit 1; \
+	fi
+	@ARGS="--name $(NAME)"; \
+	if [ -n "$(KAGGLE)" ]; then ARGS="$$ARGS --kaggle $(KAGGLE)"; fi; \
+	if [ -n "$(PREFIX)" ]; then ARGS="$$ARGS --prefix $(PREFIX)"; fi; \
+	if [ -n "$(FORCE)" ]; then ARGS="$$ARGS --force"; fi; \
+	if [ -n "$(PATH)" ]; then python3 scripts/seed_dataset.py $(PATH) $$ARGS; \
+	else python3 scripts/seed_dataset.py $$ARGS; fi
+
 # ============================================================
 # AWS DEPLOYMENT
 # ============================================================

@@ -73,10 +73,11 @@ Client  -->  Chat UI (built-in SPA)
   LangGraph   Cache     Memory
   Agent       (Redis)   (Postgres)
      |
-     +-- Planner           -- intent classification
+     +-- Planner           -- intent classification (retrieve / data_query / tool_use)
      +-- Retriever         -- hybrid vector + graph search + re-ranking
+     +-- Data Analytics    -- text-to-SQL → execute → tables + charts (optional)
      +-- Context Enricher  -- business glossary, metadata, code/pipeline context (optional)
-     +-- Responder         -- LLM answer synthesis (docs + business context)
+     +-- Responder         -- LLM answer synthesis (docs + data + business context)
      +-- Evaluator         -- answer quality scoring
                 |
      +----------+---------+
@@ -124,6 +125,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 - **Multi-tenant** --- per-tenant data isolation, config, rate limits, and auth
 - **Control plane / data plane** --- SaaS-ready split with data residency, mTLS, per-tenant rate limiting
 - **Context layer enrichment** --- optional 4-layer business context (glossary, metadata, code/pipeline, business rules) injected at query time
+- **Data analytics agent** --- text-to-SQL engine with safety guardrails, auto-schema discovery, tables + Vega-Lite charts in chat UI
 - **Provider-abstraction** --- every component (LLM, storage, vector DB, secrets, reranker) is swappable via env vars
 
 ### Provider Abstraction
@@ -134,6 +136,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | Embeddings | `EMBED_PROVIDER` / `EMBED_MODEL` | `ray` + `nomic-embed-text`, `openai` + `text-embedding-3-small` |
 | Re-ranker | `RERANKER_PROVIDER` | `none`, `llm` (LLM-based scoring), `cross_encoder` (dedicated model) |
 | Context Layers | `CONTEXT_LAYERS_ENABLED` | `false` (off), `true` (glossary, metadata, code, business rules) |
+| Data Analytics | `DATA_ANALYTICS_ENABLED` | `false` (off), `true` (text-to-SQL with tables + charts) |
 | Vector DB | `VECTORDB_PROVIDER` | `qdrant` |
 | Graph DB | `GRAPHDB_PROVIDER` | `neo4j`, `none` (disable) |
 | Storage | `STORAGE_PROVIDER` | `s3` (AWS), `azure_blob` (Azure) |
@@ -162,6 +165,8 @@ Monolith:
   make init                  Initialize DBs, collections, indexes, buckets
   make dev                   Run FastAPI server locally (hot reload, port 8000)
   make test                  Run monolith test suite (132 tests)
+  make seed-olist            Load Olist e-commerce dataset for data analytics
+  make seed-dataset NAME=x   Load any CSV dataset with auto-schema discovery
   make down                  Stop local DBs
 
 Split-Plane:

@@ -59,3 +59,4 @@ data/test-docs/*.docx
 .pytest_cache/
 .coverage
 htmlcov/
+data/olist/*.csv

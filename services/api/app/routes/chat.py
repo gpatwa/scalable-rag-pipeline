@@ -140,6 +140,10 @@ async def chat_stream(
         user_memories=user_memories,
         query_embedding=query_embedding,  # Reuse embedding from cache check
         context_layers="",  # Populated by context_enricher node (if enabled)
+        data_query_sql="",
+        data_query_result="",
+        data_query_error="",
+        data_query_time_ms=0,
     )
 
     # 5. Define Generator for Streaming Response
@@ -237,6 +241,51 @@ async def chat_stream(
                         yield json.dumps({
                             "type": "context_layers",
                             "content": ctx_layers,
+                            "session_id": session_id,
+                        }) + "\n"
+
+                # Stream data analytics results
+                if node_name == "data_analytics":
+                    sql = node_data.get("data_query_sql", "")
+                    if sql:
+                        yield json.dumps({
+                            "type": "sql_query",
+                            "sql": sql,
+                            "time_ms": node_data.get("data_query_time_ms", 0),
+                            "session_id": session_id,
+                        }) + "\n"
+
+                    result_json = node_data.get("data_query_result", "")
+                    if result_json:
+                        try:
+                            from app.analytics.formatter import (
+                                format_as_table_html, suggest_chart_spec,
+                            )
+                            result_data = json.loads(result_json)
+                            chart_spec = suggest_chart_spec(
+                                result_data["columns"],
+                                result_data["rows"],
+                                state.get("current_query", req.message),
+                            )
+                            yield json.dumps({
+                                "type": "data_result",
+                                "columns": result_data["columns"],
+                                "rows": result_data["rows"][:50],
+                                "row_count": result_data["row_count"],
+                                "table_html": format_as_table_html(
+                                    result_data["columns"], result_data["rows"]
+                                ),
+                                "chart_spec": chart_spec,
+                                "session_id": session_id,
+                            }) + "\n"
+                        except Exception as fmt_err:
+                            logger.error("Data result formatting error: %s", fmt_err)
+
+                    error = node_data.get("data_query_error", "")
+                    if error:
+                        yield json.dumps({
+                            "type": "data_error",
+                            "content": error,
                             "session_id": session_id,
                         }) + "\n"
 

@@ -357,6 +357,37 @@ When context layers are enabled, the chat stream includes an additional event:
 
 ---
 
+## Data Analytics Streaming Events
+
+When `DATA_ANALYTICS_ENABLED=true`, the chat stream includes additional event types for data queries:
+
+| Event Type | Fields | Description |
+|------------|--------|-------------|
+| `sql_query` | `sql`, `time_ms` | Generated SQL query and execution time in ms |
+| `data_result` | `columns`, `rows`, `row_count`, `table_html`, `chart_spec` | Query results with pre-rendered HTML table and Vega-Lite chart spec |
+| `data_error` | `content` | Error message (validation failure, timeout, etc.) |
+
+### Example: Data Query Response Stream
+
+```
+{"type":"status","node":"planner","session_id":"..."}
+{"type":"status","node":"data_analytics","session_id":"..."}
+{"type":"sql_query","sql":"SELECT DATE_TRUNC('month', ...) ...","time_ms":45,"session_id":"..."}
+{"type":"data_result","columns":["month","revenue"],"rows":[...],"row_count":18,"table_html":"<table>...","chart_spec":{...},"session_id":"..."}
+{"type":"status","node":"responder","session_id":"..."}
+{"type":"answer","content":"Revenue showed a steady upward trend...","session_id":"..."}
+```
+
+### Dataset Management
+
+| Command | Description |
+|---------|-------------|
+| `make seed-olist` | Load Olist e-commerce dataset (8 tables, 1.5M rows) |
+| `make seed-dataset NAME=x PATH=data/x/` | Load any CSV dataset with auto-schema discovery |
+| `make seed-dataset NAME=x KAGGLE=user/dataset` | Download from Kaggle and load |
+
+---
+
 ## Data Plane API (Split-Plane Mode)
 
 In split-plane deployment, the data plane (`services/data-plane/`, port 8080) exposes query processing endpoints. These are called by the control plane proxy, not directly by end users.

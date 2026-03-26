@@ -25,6 +25,8 @@ def route_after_planner(state: AgentState) -> str:
         return "responder"
     elif action == "tool_use":
         return "tool_node"
+    elif action == "data_query" and settings.DATA_ANALYTICS_ENABLED:
+        return "data_analytics"
     else:  # "retrieve" or fallback
         return "retriever"
 
@@ -80,11 +82,20 @@ workflow.add_node("step_advance", step_advance_node)
 workflow.set_entry_point("planner")
 
 # Conditional routing after planner: retrieve / direct_answer / tool_use
-workflow.add_conditional_edges("planner", route_after_planner, {
+_planner_edges = {
     "retriever": "retriever",
     "responder": "responder",
     "tool_node": "tool_node",
-})
+}
+
+# Data analytics node — conditional on feature flag
+if settings.DATA_ANALYTICS_ENABLED:
+    from app.agents.nodes.data_analytics import data_analytics_node
+    workflow.add_node("data_analytics", data_analytics_node)
+    workflow.add_edge("data_analytics", "responder")
+    _planner_edges["data_analytics"] = "data_analytics"
+
+workflow.add_conditional_edges("planner", route_after_planner, _planner_edges)
 
 # After retrieval → context enrichment (if enabled) → respond
 if settings.CONTEXT_LAYERS_ENABLED:

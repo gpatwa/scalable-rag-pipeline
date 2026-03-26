@@ -44,6 +44,11 @@ async def generate_node(state: AgentState) -> dict:
     if context_layers:
         context_str += f"\n\n--- Business Context ---\n{context_layers}"
 
+    # Include data analytics results
+    data_error = state.get("data_query_error", "")
+    if data_error:
+        context_str += f"\n\n--- Data Query Error ---\n{data_error}\nPlease inform the user about the error and suggest a refined question."
+
     # Include long-term user memories
     user_memories = state.get("user_memories", [])
     if user_memories:
@@ -74,7 +79,8 @@ Instructions:
 2. If context is from web search results, answer using it and mention the source URLs.
 3. If images are provided as context, describe what you see and incorporate relevant details into your answer.
 4. If no context is available, provide a helpful answer from your general knowledge and note that no internal documents were found.
-5. Be concise and professional."""
+5. Be concise and professional.
+6. If data query results are provided, synthesize a clear natural language answer from the data. Highlight key numbers, trends, and insights. Be specific with values. Do not just repeat the table — interpret it."""
 
     # Build messages — use vision format when images are present
     if image_docs:

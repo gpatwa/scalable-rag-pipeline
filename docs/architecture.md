@@ -421,6 +421,83 @@ services/api/app/context/
 
 ---
 
+## 10. Data Analytics Agent
+
+The platform includes an optional **Data Analytics Agent** that answers business questions directly from structured data in PostgreSQL. Inspired by OpenAI's in-house data agent and Wisdom AI, it generates SQL behind the scenes and presents natural language answers with tables and charts. SQL is shown only for transparency/auditability.
+
+### Feature Flag
+
+```env
+DATA_ANALYTICS_ENABLED=false   # Master switch (default off)
+ANALYTICS_DB_URL=              # Separate read-only DB (optional, falls back to DATABASE_URL)
+ANALYTICS_QUERY_TIMEOUT=10     # Max seconds per SQL query
+ANALYTICS_MAX_ROWS=1000        # Max rows returned per query
+```
+
+### Query Flow
+
+```
+User: "What was revenue by month?"
+  → Planner (fast-classifies as "data_query" via keyword matching)
+  → data_analytics node:
+      1. Build schema context (relevant tables/columns/metrics from semantic layer)
+      2. LLM generates PostgreSQL SELECT query
+      3. Validate SQL (SELECT-only, keyword blocklist, table allowlist, cost guard)
+      4. Execute on read-only Postgres connection (10s timeout)
+      5. Format results (HTML table + Vega-Lite chart spec)
+  → Responder: synthesizes natural language answer from data results
+  → Frontend: renders answer + data table + interactive chart + collapsible SQL
+```
+
+### Architecture Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Schema Context | `app/analytics/schema_context.py` | Semantic layer — table descriptions, column types, relationships, common business metrics |
+| Safety | `app/analytics/safety.py` | SQL validation — SELECT-only enforcement, keyword blocklist, table allowlist, cost guard for large tables |
+| Engine | `app/analytics/engine.py` | SQL generation (LLM) + execution (read-only Postgres with statement_timeout) |
+| Formatter | `app/analytics/formatter.py` | Result formatting — HTML tables, markdown for LLM context, Vega-Lite chart spec generation |
+| LangGraph Node | `app/agents/nodes/data_analytics.py` | Orchestrates the full text-to-SQL pipeline as a graph node |
+
+### Safety Guardrails
+
+- **Read-only connection**: `default_transaction_read_only=on` at connection level
+- **SELECT-only validation**: Rejects INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, etc.
+- **Keyword blocklist**: Rejects `pg_sleep`, `COPY`, `EXECUTE`, `dblink`, etc.
+- **Table allowlist**: Only known dataset tables can be queried
+- **Cost guard**: Rejects queries on tables >100K rows without WHERE/LIMIT/GROUP BY
+- **Statement timeout**: Default 10 seconds, configurable
+- **Row cap**: Results limited to 1,000 rows
+
+### Dataset Loading
+
+The platform includes two seed scripts for loading structured data:
+
+```bash
+# Load the built-in Olist e-commerce dataset (100K orders, 8 tables)
+make seed-olist
+
+# Load any CSV dataset (auto-discovers schema, relationships, metrics)
+make seed-dataset NAME=sales PATH=data/sales/
+make seed-dataset NAME=hr KAGGLE=username/hr-analytics PREFIX=hr_
+```
+
+The generic loader (`scripts/seed_dataset.py`) auto-generates a `schema_context.yaml` and Python schema module from any CSV collection.
+
+### Frontend Rendering
+
+The chat UI renders three new NDJSON event types:
+
+| Event Type | Content | UI Rendering |
+|------------|---------|-------------|
+| `sql_query` | Generated SQL + execution time | Collapsible "View SQL" section with timing badge |
+| `data_result` | Columns, rows, table HTML, Vega-Lite chart spec | Styled data table + interactive chart (line/bar/scatter) |
+| `data_error` | Error message | Error card with suggestion to refine query |
+
+Charts are rendered client-side using Vega-Lite (loaded from CDN). Chart type is heuristic: date+number=line, category+number=bar, two numbers=scatter.
+
+---
+
 ## Component Summary
 
 | Component | AWS | Azure | Purpose |

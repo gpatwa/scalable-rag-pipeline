@@ -19,16 +19,17 @@ Available tools:
 
 Decision rules (in priority order):
 1. "direct_answer" — ONLY for greetings ("hi", "hello", "thanks"), small talk, or when a Tool Result is already present and sufficient to answer. NEVER use this for factual questions.
-2. "retrieve" — DEFAULT for any question about people, companies, products, events, processes, or facts. Always search internal documents first.
-3. "tool_use" — when the user explicitly needs a calculation, code execution, or web search for current events / public information not in internal docs.
-4. "multi_step" — complex queries needing multiple steps (e.g. "Compare X with Y" needs retrieval + web search + synthesis).
+2. "data_query" — for quantitative business questions answerable from structured data: revenue, orders, sales, payments, customers, sellers, reviews, delivery, trends, averages, totals, top/bottom rankings. Use this when the question asks for numbers, metrics, or data analysis.
+3. "retrieve" — DEFAULT for any question about people, companies, products, events, processes, or facts. Always search internal documents first.
+4. "tool_use" — when the user explicitly needs a calculation, code execution, or web search for current events / public information not in internal docs.
+5. "multi_step" — complex queries needing multiple steps (e.g. "Compare X with Y" needs retrieval + web search + synthesis).
 
 IMPORTANT: When in doubt, choose "retrieve". Only use "direct_answer" for non-questions.
 If a Tool Result is already present, decide whether to answer directly ("direct_answer") or take another action.
 
 For single-step queries (most queries), output ONLY valid JSON:
 {{
-    "action": "retrieve" | "direct_answer" | "tool_use",
+    "action": "retrieve" | "direct_answer" | "tool_use" | "data_query",
     "refined_query": "The standalone search query",
     "reasoning": "Why you chose this action",
     "tool_name": "name from available tools (required if action is tool_use, omit otherwise)",
@@ -56,6 +57,13 @@ _QUESTION_PREFIXES = (
     "explain", "describe", "tell me", "show me", "list", "define",
     "summarize", "compare",
 )
+_DATA_KEYWORDS = frozenset({
+    "revenue", "orders", "sales", "payments", "customers", "sellers",
+    "reviews", "delivery", "shipping", "average", "total", "trend",
+    "month", "quarter", "year", "top", "bottom", "best", "worst",
+    "how many", "how much", "count", "sum", "growth", "decline",
+    "category", "product", "rating", "score", "payment",
+})
 
 
 def _fast_classify(query: str, has_tool_result: bool) -> str | None:
@@ -72,6 +80,12 @@ def _fast_classify(query: str, has_tool_result: bool) -> str | None:
     # Greetings / small talk — no retrieval needed
     if q in _GREETINGS:
         return "direct_answer"
+
+    # Data analytics queries — quantitative business questions
+    if settings.DATA_ANALYTICS_ENABLED:
+        data_hits = sum(1 for kw in _DATA_KEYWORDS if kw in q)
+        if data_hits >= 2:
+            return "data_query"
 
     # Clear question patterns → retrieve from knowledge base
     if "?" in q or q.startswith(_QUESTION_PREFIXES):
