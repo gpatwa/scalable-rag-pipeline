@@ -1,27 +1,30 @@
-# Enterprise Agentic RAG Platform
+# Enterprise Agentic RAG + Data Analytics Platform
 
 ![Architecture](https://img.shields.io/badge/Architecture-Agentic%20LangGraph-blueviolet)
 ![Orchestration](https://img.shields.io/badge/Orchestration-LangGraph%20%2B%20Ray-orange)
 ![Cloud](https://img.shields.io/badge/Cloud-AWS%20%7C%20Azure-blue)
-![Tests](https://img.shields.io/badge/Tests-198%20passing-brightgreen)
+![Analytics](https://img.shields.io/badge/Analytics-Text--to--SQL%20%2B%20Charts-green)
+![Multimodal](https://img.shields.io/badge/Multimodal-Gemini%20Embedding-red)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 
-Turn any document corpus into an **intelligent, conversational knowledge base** — deployed as a fully managed SaaS or inside a customer's own cloud — with enterprise-grade security, data residency, and zero vendor lock-in.
+Turn any document corpus **and structured data** into an **intelligent, conversational knowledge base with built-in analytics** — ask questions about documents, get answers from databases with auto-generated charts, and enrich everything with business context — deployed as a fully managed SaaS or inside a customer's own cloud.
 
 ### Why This Platform
 
 | Business Need | How It's Solved |
 |--------------|----------------|
+| **Ask questions, get data-driven answers** | Data Analytics Agent generates SQL from natural language, executes against Postgres, and renders tables + Vega-Lite charts in the chat UI — SQL shown for transparency |
+| **Documents + structured data in one place** | Agentic planner auto-routes queries: unstructured docs via hybrid RAG, structured data via text-to-SQL, complex queries via multi-step reasoning |
+| **Multimodal understanding** | Gemini Embedding supports text + image retrieval — ingest PDFs with diagrams, photos, screenshots alongside text documents |
+| **Business context that makes answers useful** | 4-layer Context Architecture (glossary, metadata, code/pipeline, business rules) enriches every response with institutional knowledge |
 | **Data residency & compliance** | Control Plane / Data Plane split — customer data never leaves their cloud region; mTLS secures every cross-plane call |
 | **Zero vendor lock-in** | Provider-abstraction layer — swap LLMs (vLLM ↔ OpenAI), vector DBs, storage, and secrets backends with a single env var |
 | **Multi-tenant SaaS at scale** | Per-tenant auth, rate limiting, usage metering, and isolated data planes — onboard new customers without redeploying |
-| **Accurate, grounded answers** | Agentic LangGraph pipeline: intent classification → hybrid vector + knowledge-graph retrieval → LLM synthesis → automated quality scoring |
 | **Multi-cloud portability** | Identical codebase deploys to AWS EKS and Azure AKS with cloud-specific Terraform, Helm, and secrets integrations |
-| **Cost efficiency** | Spot/GPU scale-to-zero via Karpenter, semantic caching (Redis), and dedicated embedding models separate from the generative LLM |
 
 ### Technology Stack
 
-Built on **FastAPI**, **LangGraph**, **Qdrant**, **Neo4j**, **Ray/vLLM**, and **Kubernetes** — with 198 tests, CI/CD pipelines, and full observability (OpenTelemetry, X-Ray, Azure Monitor).
+Built on **FastAPI**, **LangGraph**, **Qdrant**, **Neo4j**, **PostgreSQL**, **Ray/vLLM**, **Vega-Lite**, and **Kubernetes** — with CI/CD pipelines and full observability (OpenTelemetry, X-Ray, Azure Monitor).
 
 ## Quick Start (Local Development)
 
