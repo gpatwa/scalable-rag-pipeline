@@ -18,7 +18,7 @@ resource "azurerm_subnet" "aks" {
   name                 = "aks-subnet"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.0.0/22"] # 1022 IPs — enough for pods + nodes
+  address_prefixes     = [cidrsubnet(var.vnet_cidr, 6, 0)] # /22 — 1022 IPs for pods + nodes
 }
 
 # Database Subnet — PostgreSQL Flexible Server requires a delegated subnet
@@ -26,7 +26,7 @@ resource "azurerm_subnet" "database" {
   name                 = "database-subnet"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.8.0/24"]
+  address_prefixes     = [cidrsubnet(var.vnet_cidr, 8, 8)] # /24 — database subnet
 
   # Delegation required for PostgreSQL Flexible Server VNet integration
   delegation {
@@ -45,7 +45,7 @@ resource "azurerm_subnet" "redis" {
   name                 = "redis-subnet"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.9.0/24"]
+  address_prefixes     = [cidrsubnet(var.vnet_cidr, 8, 9)] # /24 — Redis subnet
 }
 
 # Private DNS Zone for PostgreSQL Flexible Server (VNet integration)
@@ -76,7 +76,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "5432"
-    source_address_prefix      = "10.0.0.0/22"
+    source_address_prefix      = azurerm_subnet.aks.address_prefixes[0]
     destination_address_prefix = "*"
   }
 
@@ -89,7 +89,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "6380"
-    source_address_prefix      = "10.0.0.0/22"
+    source_address_prefix      = azurerm_subnet.aks.address_prefixes[0]
     destination_address_prefix = "*"
   }
 }
