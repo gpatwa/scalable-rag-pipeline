@@ -94,7 +94,7 @@ def check_cost_guard(sql: str) -> Tuple[bool, str]:
     for table_name in referenced:
         schema = OLIST_SCHEMA.get(table_name, {})
         row_count = schema.get("row_count_approx", 0)
-        if row_count > 100000:
+        if row_count > 500000:  # Only block very large tables (geolocation=1M)
             return False, (
                 f"Table '{table_name}' has ~{row_count:,} rows. "
                 "Add a WHERE clause, LIMIT, or GROUP BY to avoid full table scans."
