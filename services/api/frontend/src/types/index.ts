@@ -434,6 +434,7 @@ export type SupportActionStatus =
   | 'needs_review'
   | 'approved'
   | 'ready_to_execute'
+  | 'executed'
   | 'rejected'
   | string;
 
@@ -451,6 +452,9 @@ export interface SupportAction {
   approved_by: string | null;
   approved_at: string | null;
   ready_at: string | null;
+  executed_by: string | null;
+  executed_at: string | null;
+  execution_result: Record<string, unknown> | null;
   rejected_at: string | null;
   created_at: string;
   updated_at: string;

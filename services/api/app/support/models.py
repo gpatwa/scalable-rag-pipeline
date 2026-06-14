@@ -237,6 +237,9 @@ class SupportAction(Base):
     approved_by = Column(String(255), nullable=True)
     approved_at = Column(DateTime, nullable=True)
     ready_at = Column(DateTime, nullable=True)
+    executed_by = Column(String(255), nullable=True)
+    executed_at = Column(DateTime, nullable=True)
+    execution_result = Column(JSON, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(

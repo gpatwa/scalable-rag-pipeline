@@ -334,6 +334,16 @@ class TestSupportActionQueue:
                 routes.SupportActionStatusRequest(status="approved"),
                 ctx=_ctx(user_id="reviewer"),
             )
+            ready = await routes.update_support_action_status(
+                created["action"]["id"],
+                routes.SupportActionStatusRequest(status="ready_to_execute"),
+                ctx=_ctx(user_id="reviewer"),
+            )
+            executed = await routes.execute_support_action(
+                created["action"]["id"],
+                routes.SupportActionExecuteRequest(execution_notes="Local demo execution"),
+                ctx=_ctx(user_id="operator"),
+            )
 
             assert created["action"]["status"] == "generated"
             assert created["action"]["cluster_title"] == "Export + Timeout"
@@ -342,6 +352,43 @@ class TestSupportActionQueue:
             assert updated["action"]["status"] == "approved"
             assert updated["action"]["approved_by"] == "reviewer"
             assert updated["action"]["approved_at"] is not None
+            assert ready["action"]["status"] == "ready_to_execute"
+            assert ready["action"]["ready_at"] is not None
+            assert executed["action"]["status"] == "executed"
+            assert executed["action"]["executed_by"] == "operator"
+            assert executed["action"]["executed_at"] is not None
+            assert executed["action"]["execution_result"]["mode"] == "local_mock"
+            assert executed["action"]["execution_result"]["artifacts"][0]["type"] == "support_macro"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_support_action_execute_requires_ready_status(self, monkeypatch):
+        import app.memory.postgres as pg
+        import app.routes.support as routes
+
+        engine, Session = await _session()
+        monkeypatch.setattr(pg, "AsyncSessionLocal", Session)
+        monkeypatch.setattr(routes.audit_mgr, "log_event", AsyncMock())
+
+        try:
+            created = await routes.create_support_action(
+                routes.SupportActionCreateRequest(
+                    cluster_id="tag:export|timeout",
+                    cluster_title="Export + Timeout",
+                    command_text="/support.agent.execute\ncluster: Export + Timeout",
+                    workflow={"cluster": {"id": "tag:export|timeout"}},
+                ),
+                ctx=_ctx(),
+            )
+
+            with pytest.raises(Exception) as exc:
+                await routes.execute_support_action(
+                    created["action"]["id"],
+                    routes.SupportActionExecuteRequest(),
+                    ctx=_ctx(user_id="operator"),
+                )
+            assert getattr(exc.value, "status_code", None) == 409
         finally:
             await engine.dispose()
 

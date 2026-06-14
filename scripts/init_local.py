@@ -86,6 +86,9 @@ async def _repair_local_support_actions_schema(conn):
                 approved_by VARCHAR(255) NULL,
                 approved_at TIMESTAMP NULL,
                 ready_at TIMESTAMP NULL,
+                executed_by VARCHAR(255) NULL,
+                executed_at TIMESTAMP NULL,
+                execution_result JSON NULL,
                 rejected_at TIMESTAMP NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT now(),
                 updated_at TIMESTAMP NOT NULL DEFAULT now()
@@ -94,6 +97,9 @@ async def _repair_local_support_actions_schema(conn):
         )
     )
     repair_statements = [
+        "ALTER TABLE support_actions ADD COLUMN IF NOT EXISTS executed_by VARCHAR(255) NULL",
+        "ALTER TABLE support_actions ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP NULL",
+        "ALTER TABLE support_actions ADD COLUMN IF NOT EXISTS execution_result JSON NULL",
         "CREATE INDEX IF NOT EXISTS ix_support_actions_tenant_id ON support_actions (tenant_id)",
         "CREATE INDEX IF NOT EXISTS ix_support_actions_status ON support_actions (status)",
         (
