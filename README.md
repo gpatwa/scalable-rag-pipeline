@@ -156,6 +156,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | [Azure Deployment](docs/deployment-azure.md) | AKS provisioning, Workload Identity, Key Vault integration |
 | [API Reference & Chat UI](docs/api-reference.md) | Endpoints (monolith + CP/DP), streaming protocol, sample queries, Chat UI |
 | [Local Demo Readiness](docs/LOCAL_DEMO_READINESS.md) | Local-only demo checklist, acceptance gates, and caveats |
+| [Prospect Support Case Study](docs/PROSPECT_SUPPORT_CASE_STUDY.md) | Customer-facing Resolution Intelligence story for reducing repeat support tickets |
 | [Operations Guide](docs/operations.md) | CI/CD, observability, testing, security, troubleshooting, split-plane ops |
 | [Security](docs/security.md) | Security model, mTLS, API key auth, rate limiting, threat model |
 | [Scaling](docs/scaling.md) | Autoscaling strategy, per-tenant data plane scaling, capacity planning |
