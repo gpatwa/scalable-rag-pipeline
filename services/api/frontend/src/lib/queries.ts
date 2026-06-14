@@ -332,6 +332,21 @@ export function useUpdateSupportActionStatus() {
   });
 }
 
+export function useExecuteSupportAction() {
+  const qc = useQueryClient();
+  return useMutation<
+    SupportActionResponse,
+    Error,
+    { actionId: string; execution_notes?: string | null }
+  >({
+    mutationFn: ({ actionId, execution_notes }) =>
+      api.executeSupportAction(actionId, { execution_notes }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.supportActions });
+    },
+  });
+}
+
 export function useResolveSupportIssue() {
   return useMutation<
     SupportResolveResponse,

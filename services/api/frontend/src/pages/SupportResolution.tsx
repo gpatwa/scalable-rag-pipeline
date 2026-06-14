@@ -28,6 +28,7 @@ import {
   useIndexSupportTickets,
   useBuildSupportResolutionWorkflow,
   useCreateSupportAction,
+  useExecuteSupportAction,
   useResolveSupportIssue,
   useSearchSupportIndex,
   useSeedSupportDemo,
@@ -73,6 +74,7 @@ const ACTION_STATUS_TONE: Record<string, string> = {
   needs_review: 'text-accent bg-accent/10 border-accent/20',
   approved: 'text-knowledge bg-knowledge/10 border-knowledge/20',
   ready_to_execute: 'text-governance bg-governance/10 border-governance/20',
+  executed: 'text-knowledge bg-knowledge/10 border-knowledge/20',
   rejected: 'text-destructive bg-destructive/10 border-destructive/20',
 };
 
@@ -112,6 +114,7 @@ export function SupportResolutionPage() {
   const workflowMutation = useBuildSupportResolutionWorkflow();
   const createActionMutation = useCreateSupportAction();
   const updateActionStatusMutation = useUpdateSupportActionStatus();
+  const executeActionMutation = useExecuteSupportAction();
   const seedMutation = useSeedSupportDemo();
   const startJobMutation = useStartSupportSyncIndexJob();
   const { toast } = useToast();
@@ -317,6 +320,28 @@ export function SupportResolutionPage() {
     );
   };
 
+  const executeAction = (actionId: string) => {
+    executeActionMutation.mutate(
+      {
+        actionId,
+        execution_notes: 'Local demo execution. No external system was changed.',
+      },
+      {
+        onSuccess: (data) =>
+          toast({
+            title: 'Local action executed',
+            description: `${data.action.cluster_title} produced reviewable local artifacts.`,
+          }),
+        onError: (err) =>
+          toast({
+            title: 'Could not execute action',
+            description: err.message,
+            variant: 'destructive',
+          }),
+      }
+    );
+  };
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 md:py-12">
@@ -457,8 +482,14 @@ export function SupportResolutionPage() {
               ? updateActionStatusMutation.variables?.actionId
               : undefined
           }
+          executingActionId={
+            executeActionMutation.isPending
+              ? executeActionMutation.variables?.actionId
+              : undefined
+          }
           onRefresh={() => void actionsQuery.refetch()}
           onUpdateStatus={updateActionStatus}
+          onExecute={executeAction}
         />
 
         <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-6 items-start">
@@ -986,15 +1017,19 @@ function ActionQueuePanel({
   isLoading,
   isRefreshing,
   updatingActionId,
+  executingActionId,
   onRefresh,
   onUpdateStatus,
+  onExecute,
 }: {
   actions: SupportAction[];
   isLoading: boolean;
   isRefreshing: boolean;
   updatingActionId: string | undefined;
+  executingActionId: string | undefined;
   onRefresh: () => void;
   onUpdateStatus: (actionId: string, status: SupportActionStatus) => void;
+  onExecute: (actionId: string) => void;
 }) {
   return (
     <section className="glass rounded-2xl p-4 md:p-5 mb-6">
@@ -1027,7 +1062,9 @@ function ActionQueuePanel({
               key={action.id}
               action={action}
               isUpdating={updatingActionId === action.id}
+              isExecuting={executingActionId === action.id}
               onUpdateStatus={onUpdateStatus}
+              onExecute={onExecute}
             />
           ))}
         </div>
@@ -1039,13 +1076,19 @@ function ActionQueuePanel({
 function ActionQueueCard({
   action,
   isUpdating,
+  isExecuting,
   onUpdateStatus,
+  onExecute,
 }: {
   action: SupportAction;
   isUpdating: boolean;
+  isExecuting: boolean;
   onUpdateStatus: (actionId: string, status: SupportActionStatus) => void;
+  onExecute: (actionId: string) => void;
 }) {
   const nextStatus = nextActionStatus(action.status);
+  const trust = actionTrustSummary(action);
+  const result = executionResultSummary(action.execution_result);
 
   return (
     <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
@@ -1060,6 +1103,45 @@ function ActionQueueCard({
       <p className="text-sm text-fg-secondary mt-3 leading-relaxed line-clamp-3">
         {firstCommandTask(action.command_text)}
       </p>
+
+      <div className="mt-4 grid sm:grid-cols-3 gap-2">
+        <TrustPill label="Permission" value={trust.permission} tone="accent" />
+        <TrustPill label="Evidence" value={trust.evidence} tone="knowledge" />
+        <TrustPill label="Boundary" value="Local mock only" tone="governance" />
+      </div>
+
+      <div className="mt-4 rounded-lg border border-border/70 bg-bg/30 p-3">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-fg-muted mb-2">
+          <ShieldCheck className="w-3.5 h-3.5 text-governance" />
+          Audit timeline
+        </div>
+        <div className="space-y-2">
+          {actionTimeline(action).map((item) => (
+            <div key={item.label} className="flex items-start gap-2 text-xs">
+              <span className={cn('mt-1.5 w-1.5 h-1.5 rounded-full shrink-0', item.done ? 'bg-knowledge' : 'bg-border-strong')} />
+              <div className="min-w-0">
+                <div className={item.done ? 'text-fg-secondary' : 'text-fg-muted'}>{item.label}</div>
+                {item.detail && <div className="text-fg-muted truncate">{item.detail}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {result && (
+        <div className="mt-3 rounded-lg border border-knowledge/20 bg-knowledge/10 p-3">
+          <div className="text-xs uppercase tracking-wider text-fg-muted">Execution result</div>
+          <div className="text-sm font-medium mt-1">{result.summary}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {result.artifacts.map((artifact) => (
+              <span key={artifact} className="text-[11px] px-2 py-1 rounded border border-knowledge/20 bg-bg/40 text-fg-secondary">
+                {artifact}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-2">
         {nextStatus && (
           <Button
@@ -1071,7 +1153,17 @@ function ActionQueueCard({
             {nextStatus.label}
           </Button>
         )}
-        {action.status !== 'rejected' && action.status !== 'ready_to_execute' && (
+        {action.status === 'ready_to_execute' && (
+          <Button
+            size="sm"
+            onClick={() => onExecute(action.id)}
+            disabled={isUpdating || isExecuting}
+          >
+            {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+            Execute local
+          </Button>
+        )}
+        {action.status !== 'rejected' && action.status !== 'ready_to_execute' && action.status !== 'executed' && (
           <Button
             variant="outline"
             size="sm"
@@ -1092,6 +1184,107 @@ function StatusBadge({ status }: { status: string }) {
       {formatLabel(status)}
     </span>
   );
+}
+
+function TrustPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'accent' | 'knowledge' | 'governance';
+}) {
+  const toneClass = {
+    accent: 'border-accent/20 bg-accent/10',
+    knowledge: 'border-knowledge/20 bg-knowledge/10',
+    governance: 'border-governance/20 bg-governance/10',
+  }[tone];
+
+  return (
+    <div className={cn('rounded-lg border p-2 min-w-0', toneClass)}>
+      <div className="text-[10px] uppercase tracking-wider text-fg-muted">{label}</div>
+      <div className="text-xs text-fg-secondary mt-1 truncate">{value}</div>
+    </div>
+  );
+}
+
+function actionTrustSummary(action: SupportAction) {
+  const citations = workflowArray(action.workflow, 'citations');
+  const evidence = citations.length > 0 ? `${citations.length} source${citations.length === 1 ? '' : 's'}` : 'Needs evidence';
+  const permission = action.approved_by
+    ? `Approved by ${action.approved_by}`
+    : action.status === 'generated'
+      ? 'Draft only'
+      : 'Review pending';
+  return { evidence, permission };
+}
+
+function actionTimeline(action: SupportAction) {
+  const executed = action.status === 'executed';
+  const rejected = action.status === 'rejected';
+  return [
+    {
+      label: 'Generated',
+      done: true,
+      detail: `${action.created_by} ${formatRelative(action.created_at)}`,
+    },
+    {
+      label: 'Submitted for review',
+      done: ['needs_review', 'approved', 'ready_to_execute', 'executed'].includes(action.status),
+      detail: action.review_notes || undefined,
+    },
+    {
+      label: 'Approved',
+      done: Boolean(action.approved_at),
+      detail: action.approved_by ? `${action.approved_by} ${formatRelative(action.approved_at)}` : undefined,
+    },
+    {
+      label: 'Ready to execute',
+      done: Boolean(action.ready_at),
+      detail: action.ready_at ? formatRelative(action.ready_at) : undefined,
+    },
+    {
+      label: rejected ? 'Rejected' : 'Executed locally',
+      done: executed || rejected,
+      detail: rejected
+        ? formatRelative(action.rejected_at)
+        : action.executed_by
+          ? `${action.executed_by} ${formatRelative(action.executed_at)}`
+          : undefined,
+    },
+  ];
+}
+
+function executionResultSummary(result: Record<string, unknown> | null) {
+  if (!isRecord(result)) return null;
+  const rawArtifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+  const artifacts = rawArtifacts
+    .map((artifact) => {
+      if (!isRecord(artifact)) return null;
+      const title = typeof artifact.title === 'string' ? artifact.title : undefined;
+      const type = typeof artifact.type === 'string' ? formatLabel(artifact.type) : undefined;
+      return title || type || null;
+    })
+    .filter((artifact): artifact is string => Boolean(artifact))
+    .slice(0, 3);
+  const impact = isRecord(result.impact) && typeof result.impact.summary === 'string'
+    ? result.impact.summary
+    : undefined;
+  return {
+    summary: impact || `${artifacts.length} local artifact${artifacts.length === 1 ? '' : 's'} created.`,
+    artifacts: artifacts.length > 0 ? artifacts : ['Local artifact log'],
+  };
+}
+
+function workflowArray(workflow: Record<string, unknown>, key: 'citations') {
+  const playbook = isRecord(workflow.playbook) ? workflow.playbook : {};
+  const value = playbook[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function nextActionStatus(status: SupportActionStatus) {

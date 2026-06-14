@@ -268,6 +268,17 @@ export const api = {
     if (!res.ok) throw new Error(`updateSupportActionStatus failed: ${res.status}`);
     return res.json();
   },
+  async executeSupportAction(
+    actionId: string,
+    body: { execution_notes?: string | null } = {}
+  ): Promise<import('@/types').SupportActionResponse> {
+    const res = await authedFetch(`/support/actions/${encodeURIComponent(actionId)}/execute`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`executeSupportAction failed: ${res.status}`);
+    return res.json();
+  },
   async startSupportSyncIndexJob(opts: {
     providers?: Array<'zendesk' | 'intercom'>;
     limit?: number;

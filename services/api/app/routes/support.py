@@ -30,6 +30,7 @@ SUPPORT_ACTION_STATUSES = {
     "needs_review",
     "approved",
     "ready_to_execute",
+    "executed",
     "rejected",
 }
 
@@ -210,6 +211,10 @@ class SupportActionStatusRequest(BaseModel):
     review_notes: Optional[str] = None
 
 
+class SupportActionExecuteRequest(BaseModel):
+    execution_notes: Optional[str] = None
+
+
 class SupportActionResponse(BaseModel):
     id: str
     tenant_id: str
@@ -224,6 +229,9 @@ class SupportActionResponse(BaseModel):
     approved_by: Optional[str]
     approved_at: Optional[str]
     ready_at: Optional[str]
+    executed_by: Optional[str]
+    executed_at: Optional[str]
+    execution_result: Optional[dict[str, Any]]
     rejected_at: Optional[str]
     created_at: str
     updated_at: str
@@ -295,6 +303,8 @@ async def update_support_action_status(
 ):
     if body.status not in SUPPORT_ACTION_STATUSES:
         raise HTTPException(status_code=400, detail="unsupported support action status")
+    if body.status == "executed":
+        raise HTTPException(status_code=400, detail="execute support actions with the execute route")
 
     from app.memory.postgres import AsyncSessionLocal
 
@@ -330,6 +340,59 @@ async def update_support_action_status(
 
     payload = _action_to_response(action).model_dump()
     await _audit_action(ctx, "status", True, start, payload)
+    return {"action": payload}
+
+
+@router.post("/actions/{action_id}/execute", response_model=dict)
+async def execute_support_action(
+    action_id: str,
+    body: SupportActionExecuteRequest | None = None,
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    start = time.monotonic()
+    now = datetime.utcnow()
+    async with AsyncSessionLocal() as session:
+        action = await session.get(SupportAction, action_id)
+        if action is None or action.tenant_id != ctx.tenant_id:
+            await _audit_action(
+                ctx,
+                "execute",
+                False,
+                start,
+                {"id": action_id, "status": "missing"},
+                status.HTTP_404_NOT_FOUND,
+            )
+            raise HTTPException(status_code=404, detail="support action not found")
+        if action.status != "ready_to_execute":
+            await _audit_action(
+                ctx,
+                "execute",
+                False,
+                start,
+                _action_to_response(action).model_dump(),
+                status.HTTP_409_CONFLICT,
+            )
+            raise HTTPException(status_code=409, detail="action must be ready_to_execute first")
+
+        action.status = "executed"
+        action.executed_by = ctx.user_id
+        action.executed_at = now
+        action.execution_result = _mock_support_action_execution(
+            action,
+            executed_by=ctx.user_id,
+            executed_at=now,
+            notes=body.execution_notes if body else None,
+        )
+        await session.commit()
+        await session.refresh(action)
+
+    payload = _action_to_response(action).model_dump()
+    await _audit_action(ctx, "execute", True, start, payload)
     return {"action": payload}
 
 
@@ -828,10 +891,95 @@ def _action_to_response(action: SupportAction) -> SupportActionResponse:
         approved_by=action.approved_by,
         approved_at=_dt(action.approved_at),
         ready_at=_dt(action.ready_at),
+        executed_by=action.executed_by,
+        executed_at=_dt(action.executed_at),
+        execution_result=action.execution_result,
         rejected_at=_dt(action.rejected_at),
         created_at=_dt(action.created_at) or "",
         updated_at=_dt(action.updated_at) or "",
     )
+
+
+def _mock_support_action_execution(
+    action: SupportAction,
+    *,
+    executed_by: str,
+    executed_at: datetime,
+    notes: str | None,
+) -> dict[str, Any]:
+    workflow = action.workflow or {}
+    playbook = workflow.get("playbook") if isinstance(workflow, dict) else {}
+    cluster = workflow.get("cluster") if isinstance(workflow, dict) else {}
+    knowledge_gap = workflow.get("knowledge_gap") if isinstance(workflow, dict) else {}
+    deflection_estimate = workflow.get("deflection_estimate") if isinstance(workflow, dict) else {}
+    citations = playbook.get("citations", []) if isinstance(playbook, dict) else []
+    resolution_steps = playbook.get("resolution_steps", []) if isinstance(playbook, dict) else []
+    evidence_count = len(citations) if isinstance(citations, list) else 0
+    cluster_title = (
+        cluster.get("title")
+        if isinstance(cluster, dict) and cluster.get("title")
+        else action.cluster_title
+    )
+    article_title = (
+        knowledge_gap.get("article_title")
+        if isinstance(knowledge_gap, dict) and knowledge_gap.get("article_title")
+        else "Support resolution article"
+    )
+    potential_tickets = (
+        deflection_estimate.get("potential_ticket_count")
+        if isinstance(deflection_estimate, dict)
+        else None
+    )
+
+    return {
+        "mode": "local_mock",
+        "executed_by": executed_by,
+        "executed_at": _dt(executed_at),
+        "notes": notes,
+        "artifacts": [
+            {
+                "type": "support_macro",
+                "title": f"Macro draft: {cluster_title}",
+                "status": "created_locally",
+                "summary": "Prepared a reusable agent response from the cited solved cases.",
+            },
+            {
+                "type": "kb_update",
+                "title": f"KB draft: {article_title}",
+                "status": "created_locally",
+                "summary": "Captured the documented resolution gap for human publication review.",
+            },
+            {
+                "type": "product_follow_up",
+                "title": f"Follow-up: {cluster_title}",
+                "status": "created_locally",
+                "summary": "Packaged repeat-ticket evidence for support ops or product triage.",
+            },
+        ],
+        "checks": [
+            {
+                "label": "Human approval",
+                "status": "passed" if action.approved_by else "missing",
+                "detail": f"Approved by {action.approved_by}" if action.approved_by else "Approval was not recorded.",
+            },
+            {
+                "label": "Evidence attached",
+                "status": "passed" if evidence_count > 0 else "review",
+                "detail": f"{evidence_count} citation(s) included in the command.",
+            },
+            {
+                "label": "Resolution steps",
+                "status": "passed" if isinstance(resolution_steps, list) and resolution_steps else "review",
+                "detail": f"{len(resolution_steps)} operational step(s) prepared."
+                if isinstance(resolution_steps, list)
+                else "No structured steps found.",
+            },
+        ],
+        "impact": {
+            "potential_ticket_count": potential_tickets,
+            "summary": "Local execution produced reviewable artifacts only; no external systems were changed.",
+        },
+    }
 
 
 def _dt(value: datetime | None) -> str | None:
