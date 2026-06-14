@@ -303,6 +303,69 @@ class TestSupportJobManager:
         finally:
             await engine.dispose()
 
+
+class TestSupportActionQueue:
+    @pytest.mark.asyncio
+    async def test_support_action_routes_create_list_and_update_status(self, monkeypatch):
+        import app.memory.postgres as pg
+        import app.routes.support as routes
+
+        engine, Session = await _session()
+        monkeypatch.setattr(pg, "AsyncSessionLocal", Session)
+        monkeypatch.setattr(routes.audit_mgr, "log_event", AsyncMock())
+
+        try:
+            created = await routes.create_support_action(
+                routes.SupportActionCreateRequest(
+                    cluster_id="tag:export|timeout",
+                    cluster_title="Export + Timeout",
+                    command_text="/support.agent.execute\ncluster: Export + Timeout",
+                    workflow={"cluster": {"id": "tag:export|timeout"}},
+                ),
+                ctx=_ctx(),
+            )
+            listed = await routes.list_support_actions(limit=20, ctx=_ctx())
+            other_tenant = await routes.list_support_actions(
+                limit=20,
+                ctx=_ctx(tenant_id="tenant-b"),
+            )
+            updated = await routes.update_support_action_status(
+                created["action"]["id"],
+                routes.SupportActionStatusRequest(status="approved"),
+                ctx=_ctx(user_id="reviewer"),
+            )
+
+            assert created["action"]["status"] == "generated"
+            assert created["action"]["cluster_title"] == "Export + Timeout"
+            assert [item["id"] for item in listed["actions"]] == [created["action"]["id"]]
+            assert other_tenant["actions"] == []
+            assert updated["action"]["status"] == "approved"
+            assert updated["action"]["approved_by"] == "reviewer"
+            assert updated["action"]["approved_at"] is not None
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_support_action_status_rejects_invalid_status(self, monkeypatch):
+        import app.memory.postgres as pg
+        import app.routes.support as routes
+
+        engine, Session = await _session()
+        monkeypatch.setattr(pg, "AsyncSessionLocal", Session)
+        monkeypatch.setattr(routes.audit_mgr, "log_event", AsyncMock())
+
+        try:
+            with pytest.raises(Exception) as exc:
+                await routes.update_support_action_status(
+                    "missing",
+                    routes.SupportActionStatusRequest(status="published_to_zendesk"),
+                    ctx=_ctx(),
+                )
+            assert getattr(exc.value, "status_code", None) == 400
+        finally:
+            await engine.dispose()
+
+
     @pytest.mark.asyncio
     async def test_job_controls_cancel_retry_summary_and_stale_dead_letter(self):
         from app.support.jobs import SupportJobManager

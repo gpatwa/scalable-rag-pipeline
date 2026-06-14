@@ -78,6 +78,7 @@ except ImportError:
 # Import normalized support models so their tables are auto-created
 try:
     from app.support.models import (  # noqa: F401
+        SupportAction,
         SupportArticle,
         SupportCustomer,
         SupportIndexRecord,

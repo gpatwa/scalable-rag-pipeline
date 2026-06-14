@@ -4,9 +4,11 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 
 from app.audit import manager as audit_mgr
 from app.auth.tenant import TenantContext, get_tenant_context
@@ -15,7 +17,7 @@ from app.support.demo import DEMO_PROVIDER, seed_demo_data
 from app.support.indexer import SupportIndexError, support_indexer
 from app.support.insights import repeat_ticket_insights
 from app.support.jobs import support_job_manager, support_job_worker
-from app.support.models import SupportSyncRun, SupportTicket
+from app.support.models import SupportAction, SupportSyncRun, SupportTicket
 from app.support.resolver import SupportResolveError, support_resolver
 from app.support.store import support_data_store
 from app.support.sync import SupportSyncError, support_sync_runner
@@ -23,6 +25,13 @@ from app.support.workflow import SupportWorkflowError, build_repeat_resolution_w
 
 router = APIRouter()
 ADMIN_ROLES = ("admin",)
+SUPPORT_ACTION_STATUSES = {
+    "generated",
+    "needs_review",
+    "approved",
+    "ready_to_execute",
+    "rejected",
+}
 
 
 class SupportTicketResponse(BaseModel):
@@ -188,9 +197,140 @@ class SupportRepeatResolutionWorkflowResponse(BaseModel):
     deflection_estimate: SupportDeflectionEstimateResponse
 
 
+class SupportActionCreateRequest(BaseModel):
+    cluster_id: Optional[str] = None
+    cluster_title: str = Field(..., min_length=1, max_length=500)
+    command_text: str = Field(..., min_length=1)
+    workflow: dict[str, Any] = Field(default_factory=dict)
+    action_type: str = Field(default="support_agent_command", max_length=64)
+
+
+class SupportActionStatusRequest(BaseModel):
+    status: str
+    review_notes: Optional[str] = None
+
+
+class SupportActionResponse(BaseModel):
+    id: str
+    tenant_id: str
+    created_by: str
+    action_type: str
+    status: str
+    cluster_id: Optional[str]
+    cluster_title: str
+    command_text: str
+    workflow: dict[str, Any]
+    review_notes: Optional[str]
+    approved_by: Optional[str]
+    approved_at: Optional[str]
+    ready_at: Optional[str]
+    rejected_at: Optional[str]
+    created_at: str
+    updated_at: str
+
+
 def _require_admin(ctx: TenantContext) -> None:
     if ctx.role not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Support sync requires admin role")
+
+
+@router.post("/actions", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_support_action(
+    body: SupportActionCreateRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    start = time.monotonic()
+    async with AsyncSessionLocal() as session:
+        action = SupportAction(
+            id=f"support-action-{uuid4().hex[:12]}",
+            tenant_id=ctx.tenant_id,
+            created_by=ctx.user_id,
+            action_type=body.action_type,
+            status="generated",
+            cluster_id=body.cluster_id,
+            cluster_title=body.cluster_title,
+            command_text=body.command_text,
+            workflow=body.workflow,
+        )
+        session.add(action)
+        await session.commit()
+        await session.refresh(action)
+
+    payload = _action_to_response(action).model_dump()
+    await _audit_action(ctx, "create", True, start, payload, status.HTTP_201_CREATED)
+    return {"action": payload}
+
+
+@router.get("/actions", response_model=dict)
+async def list_support_actions(
+    limit: int = Query(default=20, ge=1, le=50),
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SupportAction)
+            .where(SupportAction.tenant_id == ctx.tenant_id)
+            .order_by(desc(SupportAction.created_at))
+            .limit(limit)
+        )
+        actions = result.scalars().all()
+    return {"actions": [_action_to_response(action).model_dump() for action in actions]}
+
+
+@router.post("/actions/{action_id}/status", response_model=dict)
+async def update_support_action_status(
+    action_id: str,
+    body: SupportActionStatusRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    if body.status not in SUPPORT_ACTION_STATUSES:
+        raise HTTPException(status_code=400, detail="unsupported support action status")
+
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    start = time.monotonic()
+    now = datetime.utcnow()
+    async with AsyncSessionLocal() as session:
+        action = await session.get(SupportAction, action_id)
+        if action is None or action.tenant_id != ctx.tenant_id:
+            await _audit_action(
+                ctx,
+                "status",
+                False,
+                start,
+                {"id": action_id, "status": body.status},
+                status.HTTP_404_NOT_FOUND,
+            )
+            raise HTTPException(status_code=404, detail="support action not found")
+
+        action.status = body.status
+        action.review_notes = body.review_notes
+        if body.status == "approved":
+            action.approved_by = ctx.user_id
+            action.approved_at = now
+        elif body.status == "ready_to_execute":
+            action.ready_at = now
+        elif body.status == "rejected":
+            action.rejected_at = now
+        await session.commit()
+        await session.refresh(action)
+
+    payload = _action_to_response(action).model_dump()
+    await _audit_action(ctx, "status", True, start, payload)
+    return {"action": payload}
 
 
 @router.post("/demo/seed", response_model=dict)
@@ -673,6 +813,27 @@ def _sync_run_to_response(run: SupportSyncRun) -> SupportSyncRunResponse:
     )
 
 
+def _action_to_response(action: SupportAction) -> SupportActionResponse:
+    return SupportActionResponse(
+        id=action.id,
+        tenant_id=action.tenant_id,
+        created_by=action.created_by,
+        action_type=action.action_type,
+        status=action.status,
+        cluster_id=action.cluster_id,
+        cluster_title=action.cluster_title,
+        command_text=action.command_text,
+        workflow=action.workflow or {},
+        review_notes=action.review_notes,
+        approved_by=action.approved_by,
+        approved_at=_dt(action.approved_at),
+        ready_at=_dt(action.ready_at),
+        rejected_at=_dt(action.rejected_at),
+        created_at=_dt(action.created_at) or "",
+        updated_at=_dt(action.updated_at) or "",
+    )
+
+
 def _dt(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -824,4 +985,31 @@ async def _audit_workflow(
         duration_ms=int((time.monotonic() - start) * 1000),
         sources_used=[extra["cluster_id"]] if extra.get("cluster_id") else [],
         extra={"success": success, **extra},
+    )
+
+
+async def _audit_action(
+    ctx: TenantContext,
+    action: str,
+    success: bool,
+    start: float,
+    extra: dict[str, Any],
+    status_code: int = 200,
+) -> None:
+    await audit_mgr.log_event(
+        tenant_id=ctx.tenant_id,
+        user_id=ctx.user_id,
+        role=ctx.role,
+        event_type=f"support.action.{action}",
+        method="POST" if action != "list" else "GET",
+        path="/api/v1/support/actions",
+        status_code=status_code,
+        duration_ms=int((time.monotonic() - start) * 1000),
+        sources_used=[extra["cluster_id"]] if extra.get("cluster_id") else [],
+        extra={
+            "success": success,
+            "action_id": extra.get("id"),
+            "action_status": extra.get("status"),
+            "cluster_title": extra.get("cluster_title"),
+        },
     )

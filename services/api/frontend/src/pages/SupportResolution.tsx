@@ -6,6 +6,7 @@ import {
   Bot,
   ClipboardCheck,
   CheckCircle2,
+  Clock,
   Copy,
   Database,
   ExternalLink,
@@ -26,17 +27,22 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   useIndexSupportTickets,
   useBuildSupportResolutionWorkflow,
+  useCreateSupportAction,
   useResolveSupportIssue,
   useSearchSupportIndex,
   useSeedSupportDemo,
+  useSupportActions,
   useStartSupportSyncIndexJob,
   useSupportRepeatInsights,
   useSupportJobs,
   useSupportTickets,
+  useUpdateSupportActionStatus,
 } from '@/lib/queries';
 import { formatCount, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type {
+  SupportAction,
+  SupportActionStatus,
   SupportJob,
   SupportRepeatTicketInsight,
   SupportResolution,
@@ -60,6 +66,14 @@ const JOB_STATUS_TONE: Record<string, string> = {
   succeeded: 'text-knowledge bg-knowledge/10 border-knowledge/20',
   failed: 'text-destructive bg-destructive/10 border-destructive/20',
   canceled: 'text-fg-muted bg-surface-muted border-border',
+};
+
+const ACTION_STATUS_TONE: Record<string, string> = {
+  generated: 'text-fg-muted bg-surface-muted border-border',
+  needs_review: 'text-accent bg-accent/10 border-accent/20',
+  approved: 'text-knowledge bg-knowledge/10 border-knowledge/20',
+  ready_to_execute: 'text-governance bg-governance/10 border-governance/20',
+  rejected: 'text-destructive bg-destructive/10 border-destructive/20',
 };
 
 const PIPELINE = [
@@ -91,16 +105,20 @@ export function SupportResolutionPage() {
     min_count: 2,
   });
   const jobsQuery = useSupportJobs();
+  const actionsQuery = useSupportActions();
   const indexMutation = useIndexSupportTickets();
   const searchMutation = useSearchSupportIndex();
   const resolveMutation = useResolveSupportIssue();
   const workflowMutation = useBuildSupportResolutionWorkflow();
+  const createActionMutation = useCreateSupportAction();
+  const updateActionStatusMutation = useUpdateSupportActionStatus();
   const seedMutation = useSeedSupportDemo();
   const startJobMutation = useStartSupportSyncIndexJob();
   const { toast } = useToast();
 
   const tickets = ticketsQuery.data?.tickets ?? [];
   const jobs = jobsQuery.data?.jobs ?? [];
+  const actions = actionsQuery.data?.actions ?? [];
   const repeatInsights = repeatInsightsQuery.data?.insights ?? EMPTY_REPEAT_INSIGHTS;
   const repeatSummary = repeatInsightsQuery.data?.summary;
   const activeJob = jobs.find((job) => job.status === 'queued' || job.status === 'running');
@@ -256,6 +274,49 @@ export function SupportResolutionPage() {
     }
   };
 
+  const saveWorkflowAction = (workflow: SupportResolutionWorkflow, commandText: string) => {
+    createActionMutation.mutate(
+      {
+        cluster_id: workflow.cluster.id,
+        cluster_title: workflow.cluster.title,
+        command_text: commandText,
+        workflow: JSON.parse(JSON.stringify(workflow)) as Record<string, unknown>,
+      },
+      {
+        onSuccess: (data) =>
+          toast({
+            title: 'Action added to approval queue',
+            description: `${data.action.cluster_title} is ready for support ops review.`,
+          }),
+        onError: (err) =>
+          toast({
+            title: 'Could not save action',
+            description: err.message,
+            variant: 'destructive',
+          }),
+      }
+    );
+  };
+
+  const updateActionStatus = (actionId: string, status: SupportActionStatus) => {
+    updateActionStatusMutation.mutate(
+      { actionId, status },
+      {
+        onSuccess: (data) =>
+          toast({
+            title: 'Action status updated',
+            description: `${data.action.cluster_title} is now ${formatLabel(data.action.status)}.`,
+          }),
+        onError: (err) =>
+          toast({
+            title: 'Could not update action',
+            description: err.message,
+            variant: 'destructive',
+          }),
+      }
+    );
+  };
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 md:py-12">
@@ -383,6 +444,21 @@ export function SupportResolutionPage() {
           isLoading={workflowMutation.isPending}
           isError={workflowMutation.isError}
           errorMessage={workflowMutation.error?.message}
+          isSavingAction={createActionMutation.isPending}
+          onSaveAction={saveWorkflowAction}
+        />
+
+        <ActionQueuePanel
+          actions={actions}
+          isLoading={actionsQuery.isLoading}
+          isRefreshing={actionsQuery.isFetching}
+          updatingActionId={
+            updateActionStatusMutation.isPending
+              ? updateActionStatusMutation.variables?.actionId
+              : undefined
+          }
+          onRefresh={() => void actionsQuery.refetch()}
+          onUpdateStatus={updateActionStatus}
         />
 
         <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-6 items-start">
@@ -646,11 +722,15 @@ function WorkflowPanel({
   isLoading,
   isError,
   errorMessage,
+  isSavingAction,
+  onSaveAction,
 }: {
   workflow: SupportResolutionWorkflow | undefined;
   isLoading: boolean;
   isError: boolean;
   errorMessage?: string;
+  isSavingAction: boolean;
+  onSaveAction: (workflow: SupportResolutionWorkflow, commandText: string) => void;
 }) {
   if (!workflow && !isLoading && !isError) return null;
 
@@ -752,7 +832,11 @@ function WorkflowPanel({
                 </ul>
               </article>
 
-              <AgentCommandAction workflow={workflow} />
+              <AgentCommandAction
+                workflow={workflow}
+                isSavingAction={isSavingAction}
+                onSaveAction={onSaveAction}
+              />
 
               <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
                 <div className="text-xs uppercase tracking-wider text-fg-muted">Evidence and guardrails</div>
@@ -791,7 +875,15 @@ function WorkflowPanel({
   );
 }
 
-function AgentCommandAction({ workflow }: { workflow: SupportResolutionWorkflow }) {
+function AgentCommandAction({
+  workflow,
+  isSavingAction,
+  onSaveAction,
+}: {
+  workflow: SupportResolutionWorkflow;
+  isSavingAction: boolean;
+  onSaveAction: (workflow: SupportResolutionWorkflow, commandText: string) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const command = buildAgentCommand(workflow);
 
@@ -816,10 +908,21 @@ function AgentCommandAction({ workflow }: { workflow: SupportResolutionWorkflow 
             intent to Zendesk, Jira, or a KB writer.
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={copyCommand}>
-          {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
+        <div className="flex flex-wrap gap-2 justify-end">
+          <Button type="button" variant="outline" size="sm" onClick={copyCommand}>
+            {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onSaveAction(workflow, command)}
+            disabled={isSavingAction}
+          >
+            {isSavingAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+            Queue
+          </Button>
+        </div>
       </div>
       <div className="mt-3 rounded-lg border border-border/70 bg-bg/40 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-[11px] uppercase tracking-wider text-fg-muted">
@@ -876,6 +979,133 @@ function buildAgentCommand(workflow: SupportResolutionWorkflow) {
     'guardrails:',
     guardrails || '- Human review required before any customer-facing action.',
   ].join('\n');
+}
+
+function ActionQueuePanel({
+  actions,
+  isLoading,
+  isRefreshing,
+  updatingActionId,
+  onRefresh,
+  onUpdateStatus,
+}: {
+  actions: SupportAction[];
+  isLoading: boolean;
+  isRefreshing: boolean;
+  updatingActionId: string | undefined;
+  onRefresh: () => void;
+  onUpdateStatus: (actionId: string, status: SupportActionStatus) => void;
+}) {
+  return (
+    <section className="glass rounded-2xl p-4 md:p-5 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-accent" />
+            <h2 className="text-lg font-semibold tracking-tight">Approval action queue</h2>
+          </div>
+          <p className="text-sm text-fg-secondary mt-1">
+            Local-only command actions move through review before any future integration can execute them.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing}>
+          <RefreshCw className={cn('w-3.5 h-3.5', isRefreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
+
+      {isLoading && <div className="h-24 rounded-xl bg-surface-muted animate-pulse" />}
+      {!isLoading && actions.length === 0 && (
+        <div className="rounded-xl border border-border bg-surface-muted/40 p-4 text-sm text-fg-secondary">
+          No queued actions yet. Build a resolution workflow, then queue the generated agent command for review.
+        </div>
+      )}
+      {!isLoading && actions.length > 0 && (
+        <div className="grid lg:grid-cols-2 gap-3">
+          {actions.slice(0, 4).map((action) => (
+            <ActionQueueCard
+              key={action.id}
+              action={action}
+              isUpdating={updatingActionId === action.id}
+              onUpdateStatus={onUpdateStatus}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActionQueueCard({
+  action,
+  isUpdating,
+  onUpdateStatus,
+}: {
+  action: SupportAction;
+  isUpdating: boolean;
+  onUpdateStatus: (actionId: string, status: SupportActionStatus) => void;
+}) {
+  const nextStatus = nextActionStatus(action.status);
+
+  return (
+    <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-wider text-fg-muted">Agent command</div>
+          <h3 className="font-semibold mt-1 truncate">{action.cluster_title}</h3>
+          <p className="text-xs text-fg-muted mt-1 font-mono truncate">{action.id}</p>
+        </div>
+        <StatusBadge status={action.status} />
+      </div>
+      <p className="text-sm text-fg-secondary mt-3 leading-relaxed line-clamp-3">
+        {firstCommandTask(action.command_text)}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {nextStatus && (
+          <Button
+            size="sm"
+            onClick={() => onUpdateStatus(action.id, nextStatus.status)}
+            disabled={isUpdating}
+          >
+            {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+            {nextStatus.label}
+          </Button>
+        )}
+        {action.status !== 'rejected' && action.status !== 'ready_to_execute' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onUpdateStatus(action.id, 'rejected')}
+            disabled={isUpdating}
+          >
+            Reject
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={cn('text-[11px] px-2 py-1 rounded border capitalize whitespace-nowrap', ACTION_STATUS_TONE[status] ?? ACTION_STATUS_TONE.generated)}>
+      {formatLabel(status)}
+    </span>
+  );
+}
+
+function nextActionStatus(status: SupportActionStatus) {
+  if (status === 'generated') return { status: 'needs_review', label: 'Submit review' };
+  if (status === 'needs_review') return { status: 'approved', label: 'Approve' };
+  if (status === 'approved') return { status: 'ready_to_execute', label: 'Mark ready' };
+  return null;
+}
+
+function firstCommandTask(commandText: string) {
+  const task = commandText
+    .split('\n')
+    .find((line) => line.startsWith('- ') && !line.includes('Validate the cited'));
+  return task?.replace(/^- /, '') || commandText.split('\n')[0] || 'Agent command queued for review.';
 }
 
 async function copyText(value: string) {
