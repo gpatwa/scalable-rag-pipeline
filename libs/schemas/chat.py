@@ -1,7 +1,9 @@
 # libs/schemas/chat.py
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
 
 class Message(BaseModel):
     role: str # "user", "assistant", "system"
@@ -12,7 +14,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     stream: bool = True
-    
+
     # Optional filters for advanced users (e.g., "only search HR docs")
     filters: Optional[Dict[str, Any]] = None
 

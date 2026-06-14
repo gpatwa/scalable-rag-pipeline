@@ -12,7 +12,6 @@ User identity is forwarded from the control plane via:
 """
 from fastapi import Depends, HTTPException, Request
 
-
 # Late-initialised — set during app startup
 _api_key: str = ""
 
@@ -59,7 +58,7 @@ async def get_data_plane_context(
     Imports TenantContext lazily to avoid import-time namespace conflicts
     (services/data-plane/app/ vs services/api/app/).
     """
-    from app.auth.tenant import TenantContext, DEFAULT_TENANT_ID
+    from app.auth.tenant import DEFAULT_TENANT_ID, TenantContext
 
     return TenantContext(
         tenant_id=DEFAULT_TENANT_ID,

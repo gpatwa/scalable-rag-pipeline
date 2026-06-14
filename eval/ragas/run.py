@@ -1,14 +1,12 @@
 # eval/ragas/run.py
-import os
-import pandas as pd
+from datasets import Dataset
 from ragas import evaluate
 from ragas.metrics import (
-    faithfulness,
     answer_relevancy,
     context_precision,
     context_recall,
+    faithfulness,
 )
-from datasets import Dataset
 
 # In a real setup, you would load these from 'eval/datasets/golden.json'
 # and your system's actual outputs.
@@ -30,7 +28,7 @@ def run_evaluation(questions: list, answers: list, contexts: list, ground_truths
     # Ragas uses OpenAI by default, ensure OPENAI_API_KEY is set
     # or configure it to use your Ray Serve endpoint via LangChain wrapper.
     print("Starting Ragas Evaluation...")
-    
+
     results = evaluate(
         dataset=dataset,
         metrics=[
@@ -45,7 +43,7 @@ def run_evaluation(questions: list, answers: list, contexts: list, ground_truths
     df = results.to_pandas()
     output_path = "eval/reports/latest.csv"
     df.to_csv(output_path, index=False)
-    
+
     print(f"✅ Evaluation complete. Results saved to {output_path}")
     print(results)
 

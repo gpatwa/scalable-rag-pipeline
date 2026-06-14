@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """
 Seed script for Context Layer tables.
 
@@ -35,7 +36,6 @@ if not os.environ.get("DATABASE_URL"):
     os.environ["DATABASE_URL"] = f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 import sqlalchemy as sa
-from sqlalchemy.orm import Session
 
 DATABASE_URL = os.environ["DATABASE_URL"].replace("+asyncpg", "")
 

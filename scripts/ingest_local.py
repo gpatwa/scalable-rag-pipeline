@@ -14,13 +14,13 @@ When MULTIMODAL_ENABLED=true:
   - PDFs have images extracted and embedded alongside text
   - Standalone image files (.png, .jpg, etc.) are supported
 """
-import asyncio
 import argparse
+import asyncio
 import glob
+import logging
 import os
 import sys
 import uuid
-import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -189,6 +189,7 @@ async def embed_image_gemini(image_bytes: bytes, mime_type: str) -> list[float]:
 async def embed_texts_gemini(texts: list[str]) -> list[list[float]]:
     """Embed texts via Gemini in batches of 100 with rate-limit retry."""
     import time
+
     from google.genai import types
     client = _get_gemini_client()
     all_embeddings = []

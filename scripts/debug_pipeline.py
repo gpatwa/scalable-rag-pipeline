@@ -4,9 +4,8 @@ Debug diagnostic — traces each stage of the RAG pipeline.
 Usage: python3 scripts/debug_pipeline.py "Who founded Acme Corp?"
 """
 import asyncio
-import sys
 import os
-import json
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "api"))

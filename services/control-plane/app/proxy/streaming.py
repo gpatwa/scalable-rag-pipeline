@@ -7,9 +7,11 @@ without buffering. Uses httpx.AsyncClient.stream() for true streaming.
 """
 import json
 import logging
+
 import httpx
 from fastapi import Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+
 from .mtls import create_mtls_client
 
 logger = logging.getLogger(__name__)

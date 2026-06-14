@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # Path setup and env vars handled by conftest.py
 
 
@@ -46,8 +45,9 @@ class TestHealthClientInjection:
     """Tests for health check client injection."""
 
     def test_set_health_clients(self):
-        from dp_app.routes.health import set_health_clients, _vectordb_client, _graphdb_client
         from unittest.mock import MagicMock
+
+        from dp_app.routes.health import set_health_clients
 
         mock_vectordb = MagicMock()
         mock_graphdb = MagicMock()
@@ -60,8 +60,8 @@ class TestHealthClientInjection:
         assert health_module._graphdb_client is mock_graphdb
 
     def test_set_health_metadata(self):
-        from dp_app.routes.health import set_health_metadata
         import dp_app.routes.health as health_module
+        from dp_app.routes.health import set_health_metadata
 
         set_health_metadata("dp-meta-test", "3.0.0")
         assert health_module._dp_id == "dp-meta-test"

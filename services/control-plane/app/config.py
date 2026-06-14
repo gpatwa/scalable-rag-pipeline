@@ -5,8 +5,9 @@ Control Plane configuration.
 The control plane has its own database (tenants, data plane registry, usage)
 and manages authentication, routing, and administration.
 """
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic_settings import BaseSettings
 
 
 class ControlPlaneSettings(BaseSettings):

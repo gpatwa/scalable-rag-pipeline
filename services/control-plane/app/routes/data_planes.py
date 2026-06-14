@@ -7,12 +7,14 @@ for data plane self-registration and heartbeat.
 """
 import hashlib
 from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy import select
-from ..auth.jwt import require_admin, validate_internal_key
+
 from .. import db as db_module
+from ..auth.jwt import require_admin, validate_internal_key
 from ..models.data_plane import DataPlane
 from ..proxy.router import invalidate_cache
 

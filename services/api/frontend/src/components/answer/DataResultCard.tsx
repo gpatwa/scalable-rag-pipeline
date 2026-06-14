@@ -40,7 +40,6 @@ export function DataResultCard({ result }: Props) {
         if (cancelled) viewHandle?.finalize?.();
       })
       .catch((err) => {
-        // eslint-disable-next-line no-console
         console.warn('vega-embed failed:', err);
       });
 

@@ -7,13 +7,13 @@ In data plane mode, files are stored without tenant prefix
 (the entire storage bucket belongs to one customer).
 """
 import uuid
+
+# Data plane auth
+from dp_app.auth.control_plane_auth import get_data_plane_context
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth.tenant import TenantContext
-
-# Data plane auth
-from dp_app.auth.control_plane_auth import get_data_plane_context
 
 router = APIRouter()
 

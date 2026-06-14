@@ -52,6 +52,8 @@ function setLink(rel: string, href: string) {
 }
 
 export function useSEO(meta: SEOMeta) {
+  const jsonLdKey = JSON.stringify(meta.jsonLd ?? null);
+
   useEffect(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const canonical = meta.canonicalPath
@@ -107,6 +109,7 @@ export function useSEO(meta: SEOMeta) {
     meta.ogImage,
     meta.ogType,
     meta.noindex,
-    JSON.stringify(meta.jsonLd ?? null),
+    meta.jsonLd,
+    jsonLdKey,
   ]);
 }

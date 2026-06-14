@@ -5,12 +5,14 @@ Tenant management CRUD routes.
 Admin-only endpoints for managing customer organizations.
 """
 import uuid
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy import select
-from ..auth.jwt import require_admin
+
 from .. import db as db_module
+from ..auth.jwt import require_admin
 from ..models.tenant import Tenant
 
 router = APIRouter()

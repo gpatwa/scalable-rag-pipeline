@@ -1,7 +1,7 @@
 # libs/utils/timing.py
-import time
 import functools
 import logging
+import time
 
 logger = logging.getLogger("performance")
 

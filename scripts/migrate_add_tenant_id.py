@@ -15,11 +15,11 @@ Usage:
     # Dry-run mode (print SQL without executing)
     python scripts/migrate_add_tenant_id.py --dry-run
 """
-import asyncio
 import argparse
+import asyncio
+import logging
 import os
 import sys
-import logging
 
 # Allow importing from the services/api directory
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "api"))

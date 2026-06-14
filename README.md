@@ -49,7 +49,9 @@ python3 scripts/ingest_local.py --sample
 make dev
 ```
 
-Open the **Chat UI** at `http://localhost:8000/`.
+Open the API at `http://localhost:8080/`. For the React app, start the
+frontend with `cd services/api/frontend && npm run dev -- --host 0.0.0.0`,
+then open `http://localhost:5173/`.
 
 | Component       | Service                 | Port        |
 |----------------|------------------------|-------------|
@@ -153,6 +155,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | [AWS Deployment](docs/deployment-aws.md) | EKS provisioning, staging/prod environments, bootstrap, cost management |
 | [Azure Deployment](docs/deployment-azure.md) | AKS provisioning, Workload Identity, Key Vault integration |
 | [API Reference & Chat UI](docs/api-reference.md) | Endpoints (monolith + CP/DP), streaming protocol, sample queries, Chat UI |
+| [Local Demo Readiness](docs/LOCAL_DEMO_READINESS.md) | Local-only demo checklist, acceptance gates, and caveats |
 | [Operations Guide](docs/operations.md) | CI/CD, observability, testing, security, troubleshooting, split-plane ops |
 | [Security](docs/security.md) | Security model, mTLS, API key auth, rate limiting, threat model |
 | [Scaling](docs/scaling.md) | Autoscaling strategy, per-tenant data plane scaling, capacity planning |
@@ -166,7 +169,8 @@ Monolith:
   make install               Install Python dependencies
   make up                    Start local DBs via Docker Compose
   make init                  Initialize DBs, collections, indexes, buckets
-  make dev                   Run FastAPI server locally (hot reload, port 8000)
+  make dev                   Run FastAPI server locally (hot reload, port 8080)
+  make demo-ready-local      Seed demo data and run local demo acceptance
   make test                  Run monolith test suite (132 tests)
   make seed-olist            Load Olist e-commerce dataset for data analytics
   make seed-dataset NAME=x   Load any CSV dataset with auto-schema discovery

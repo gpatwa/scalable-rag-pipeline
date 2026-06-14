@@ -15,10 +15,9 @@ Usage:
     python3 eval/context_layer_eval.py
 """
 import json
-import os
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 # ── Evaluation Dataset ─────────────────────────────────────────────────
 # Questions that specifically benefit from context layer enrichment.

@@ -1,8 +1,9 @@
 # pipelines/ingestion/embedding/compute.py
-import os
-import httpx
 import logging
-from typing import Dict, Any
+import os
+from typing import Any, Dict
+
+import httpx
 
 logger = logging.getLogger(__name__)
 

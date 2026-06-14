@@ -1,9 +1,9 @@
 # services/sandbox/runner.py
-from flask import Flask, request, jsonify
-import sys
-import io
 import contextlib
+import io
 import multiprocessing
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -32,18 +32,18 @@ def run_code():
     queue = multiprocessing.Queue()
     p = multiprocessing.Process(target=execute_code_safe, args=(code, queue))
     p.start()
-    
+
     # Block until timeout
     p.join(timeout)
-    
+
     if p.is_alive():
         p.terminate()
         return jsonify({"output": "Error: Execution timed out."}), 408
-        
+
     if not queue.empty():
         result = queue.get()
         return jsonify(result)
-        
+
     return jsonify({"output": "No output produced."})
 
 if __name__ == "__main__":

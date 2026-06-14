@@ -21,7 +21,7 @@ export default defineConfig({
   timeout: 30_000,
 
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5174',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 5_000,
@@ -37,11 +37,8 @@ export default defineConfig({
 
   webServer: process.env.CI
     ? {
-        // Vite defaults to 5173 (set in vite.config.ts) but baseURL above
-        // is 5174 to leave 5173 free for ad-hoc dev. Pass --port explicitly
-        // so the auto-started server matches.
-        command: 'npm run dev -- --port 5174',
-        port: 5174,
+        command: 'npm run dev -- --port 5173',
+        port: 5173,
         reuseExistingServer: false,
         timeout: 60_000,
       }

@@ -1,5 +1,6 @@
 # pipelines/ingestion/chunking/splitter.py
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 

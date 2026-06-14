@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # Path setup and env vars handled by conftest.py
 
 
@@ -15,8 +14,9 @@ class TestJWTTokenCreation:
     """Tests for control plane JWT token creation."""
 
     def test_create_token_includes_claims(self):
-        from app.auth.jwt import create_token
         from jose import jwt
+
+        from app.auth.jwt import create_token
         from app.config import cp_settings
 
         token = create_token(
@@ -34,8 +34,9 @@ class TestJWTTokenCreation:
         assert "admin" in payload["permissions"]
 
     def test_create_token_user_permissions(self):
-        from app.auth.jwt import create_token
         from jose import jwt
+
+        from app.auth.jwt import create_token
         from app.config import cp_settings
 
         token = create_token(user_id="bob", role="user")
@@ -47,8 +48,9 @@ class TestJWTTokenCreation:
         assert "write" in payload["permissions"]
 
     def test_create_token_default_values(self):
-        from app.auth.jwt import create_token
         from jose import jwt
+
+        from app.auth.jwt import create_token
         from app.config import cp_settings
 
         token = create_token(user_id="charlie")
@@ -59,8 +61,9 @@ class TestJWTTokenCreation:
         assert payload["role"] == "user"
 
     def test_create_token_expiry(self):
-        from app.auth.jwt import create_token
         from jose import jwt
+
+        from app.auth.jwt import create_token
         from app.config import cp_settings
 
         token = create_token(user_id="test", expires_in=3600)
@@ -75,8 +78,9 @@ class TestJWTTokenValidation:
 
     @pytest.mark.asyncio
     async def test_get_current_user_valid_token(self):
-        from app.auth.jwt import create_token, get_current_user
         from unittest.mock import MagicMock
+
+        from app.auth.jwt import create_token, get_current_user
 
         token = create_token(user_id="alice", tenant_id="acme", role="user")
 
@@ -94,9 +98,11 @@ class TestJWTTokenValidation:
 
     @pytest.mark.asyncio
     async def test_get_current_user_expired_token(self):
-        from app.auth.jwt import create_token, get_current_user
-        from fastapi import HTTPException
         from unittest.mock import MagicMock
+
+        from fastapi import HTTPException
+
+        from app.auth.jwt import create_token, get_current_user
 
         token = create_token(user_id="expired", expires_in=-10)
 
@@ -111,9 +117,11 @@ class TestJWTTokenValidation:
 
     @pytest.mark.asyncio
     async def test_get_current_user_no_token(self):
-        from app.auth.jwt import get_current_user
-        from fastapi import HTTPException
         from unittest.mock import MagicMock
+
+        from fastapi import HTTPException
+
+        from app.auth.jwt import get_current_user
 
         mock_request = MagicMock()
         mock_request.query_params = {}
@@ -124,8 +132,9 @@ class TestJWTTokenValidation:
 
     @pytest.mark.asyncio
     async def test_get_current_user_query_param_token(self):
-        from app.auth.jwt import create_token, get_current_user
         from unittest.mock import MagicMock
+
+        from app.auth.jwt import create_token, get_current_user
 
         token = create_token(user_id="sse-user", tenant_id="sse-tenant")
 
@@ -150,8 +159,9 @@ class TestAdminAuth:
 
     @pytest.mark.asyncio
     async def test_require_admin_blocks_regular_user(self):
-        from app.auth.jwt import require_admin
         from fastapi import HTTPException
+
+        from app.auth.jwt import require_admin
 
         regular_user = {"id": "regular-user", "role": "user", "permissions": ["read"]}
         with pytest.raises(HTTPException) as exc_info:
@@ -164,9 +174,10 @@ class TestInternalAuth:
 
     @pytest.mark.asyncio
     async def test_valid_internal_key(self):
+        from unittest.mock import MagicMock
+
         from app.auth.jwt import validate_internal_key
         from app.config import cp_settings
-        from unittest.mock import MagicMock
 
         mock_request = MagicMock()
         mock_request.headers = {"X-Internal-Key": cp_settings.INTERNAL_API_KEY}
@@ -176,9 +187,11 @@ class TestInternalAuth:
 
     @pytest.mark.asyncio
     async def test_invalid_internal_key(self):
-        from app.auth.jwt import validate_internal_key
-        from fastapi import HTTPException
         from unittest.mock import MagicMock
+
+        from fastapi import HTTPException
+
+        from app.auth.jwt import validate_internal_key
 
         mock_request = MagicMock()
         mock_request.headers = {"X-Internal-Key": "wrong-key"}
@@ -189,9 +202,11 @@ class TestInternalAuth:
 
     @pytest.mark.asyncio
     async def test_missing_internal_key(self):
-        from app.auth.jwt import validate_internal_key
-        from fastapi import HTTPException
         from unittest.mock import MagicMock
+
+        from fastapi import HTTPException
+
+        from app.auth.jwt import validate_internal_key
 
         mock_request = MagicMock()
         mock_request.headers = {}

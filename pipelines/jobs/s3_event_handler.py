@@ -1,7 +1,6 @@
 # pipelines/jobs/s3_event_handler.py
-import boto3
 import os
-import time
+
 from ray.job_submission import JobSubmissionClient
 
 # Config

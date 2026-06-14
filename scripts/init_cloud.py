@@ -27,8 +27,8 @@ Usage:
 """
 
 import argparse
-import sys
 import os
+import sys
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -142,11 +142,11 @@ def init_neo4j(uri: str, user: str, password: str):
 
 def init_postgres(db_url: str):
     """Create Postgres tables using SQLAlchemy models."""
-    print(f"\n--- Postgres ---")
+    print("\n--- Postgres ---")
 
     try:
-        from sqlalchemy import create_engine
         from services.api.app.memory.postgres import Base
+        from sqlalchemy import create_engine
 
         sync_url = db_url.replace("+asyncpg", "").replace("+aiopg", "")
         engine = create_engine(sync_url)

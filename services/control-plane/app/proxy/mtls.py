@@ -6,10 +6,11 @@ Creates an httpx.AsyncClient configured with:
   - Client certificate + key (control plane identity)
   - CA certificate (to verify data plane server cert)
 """
-import ssl
-import httpx
 import logging
 from typing import Optional
+
+import httpx
+
 from ..config import cp_settings
 
 logger = logging.getLogger(__name__)

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * /solutions/:persona — persona-targeted landing surfaces.
  *

@@ -5,8 +5,9 @@ Data Plane configuration.
 Extends the shared Settings with data-plane-specific fields
 for control plane registration and heartbeat.
 """
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic_settings import BaseSettings
 
 
 class DataPlaneSettings(BaseSettings):

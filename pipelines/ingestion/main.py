@@ -1,14 +1,16 @@
 # pipelines/ingestion/main.py
-import os
-import ray
 import logging
-from typing import Dict, Any
-from pipelines.ingestion.loaders.pdf import parse_pdf_bytes
-from pipelines.ingestion.chunking.splitter import split_text, split_multimodal
+import os
+from typing import Any, Dict
+
+import ray
+
+from pipelines.ingestion.chunking.splitter import split_multimodal, split_text
 from pipelines.ingestion.embedding.compute import BatchEmbedder, MultimodalBatchEmbedder
 from pipelines.ingestion.graph.extractor import GraphExtractor
-from pipelines.ingestion.indexing.qdrant import QdrantIndexer
 from pipelines.ingestion.indexing.neo4j import Neo4jIndexer
+from pipelines.ingestion.indexing.qdrant import QdrantIndexer
+from pipelines.ingestion.loaders.pdf import parse_pdf_bytes
 
 # Initialize Ray (Connect to the existing cluster)
 ray.init(address="auto")

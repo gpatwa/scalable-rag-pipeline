@@ -3,7 +3,7 @@ from prometheus_client import Counter, Histogram
 
 # 1. Counter: Only goes up (e.g., Total Requests)
 REQUEST_COUNT = Counter(
-    "rag_api_requests_total", 
+    "rag_api_requests_total",
     "Total number of requests",
     ["method", "endpoint", "status"]
 )

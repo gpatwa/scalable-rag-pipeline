@@ -8,10 +8,10 @@ shared monolith code (app) are importable.
 Key: "app" → services/api/app/ (shared code)
      "dp_app" → services/data-plane/app/ (data plane specific)
 """
-import os
-import sys
 import importlib
 import importlib.util
+import os
+import sys
 
 # Set env vars before any app imports
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/testdb")

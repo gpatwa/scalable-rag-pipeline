@@ -100,13 +100,17 @@ async function mockApi(page: Page) {
   });
 }
 
+async function gotoApp(page: Page, path = '/') {
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
+}
+
 test.describe('Compass happy path', () => {
   test.beforeEach(async ({ page }) => {
     await mockApi(page);
   });
 
   test('home renders hero, ask box, and quick-start', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
 
     // Hero
     await expect(page.getByText('Welcome back, Gopal')).toBeVisible();
@@ -121,14 +125,14 @@ test.describe('Compass happy path', () => {
   });
 
   test('navigates to threads list and detail', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
     await page.getByRole('link', { name: 'Threads' }).first().click();
     await expect(page).toHaveURL(/\/threads$/);
     await expect(page.getByText('Investigating churn drop')).toBeVisible();
   });
 
   test('ask flow: pipeline chips appear and answer renders', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
 
     const textarea = page.getByPlaceholder('Ask anything…');
     await textarea.click();
@@ -158,7 +162,7 @@ test.describe('Compass happy path', () => {
   });
 
   test('command palette opens with ⌘K and lists nav targets', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
     // Cmd on macOS, Ctrl elsewhere — Playwright's `Meta+K` works cross-platform
     await page.keyboard.press('Meta+K');
     await expect(

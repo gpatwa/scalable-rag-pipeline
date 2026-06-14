@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 
 import pytest
 
-
 # db_session fixture provided by conftest.py
 
 
@@ -28,8 +27,9 @@ class TestDataPlaneModel:
 
     @pytest.mark.asyncio
     async def test_register_data_plane(self, db_session):
-        from app.models.data_plane import DataPlane
         from sqlalchemy import select
+
+        from app.models.data_plane import DataPlane
 
         async with db_session() as session:
             async with session.begin():
@@ -56,8 +56,9 @@ class TestDataPlaneModel:
 
     @pytest.mark.asyncio
     async def test_heartbeat_updates_timestamp(self, db_session):
-        from app.models.data_plane import DataPlane
         from sqlalchemy import select
+
+        from app.models.data_plane import DataPlane
 
         old_time = datetime.utcnow() - timedelta(minutes=5)
 
@@ -89,9 +90,10 @@ class TestDataPlaneModel:
     @pytest.mark.asyncio
     async def test_stale_data_plane_detection(self, db_session):
         """Data planes with stale heartbeat should be detectable."""
+        from sqlalchemy import select
+
         from app.models.data_plane import DataPlane
         from app.registry.manager import DEFAULT_HEARTBEAT_INTERVAL, STALE_MULTIPLIER
-        from sqlalchemy import select
 
         stale_threshold = timedelta(seconds=DEFAULT_HEARTBEAT_INTERVAL * STALE_MULTIPLIER)
         stale_time = datetime.utcnow() - stale_threshold - timedelta(seconds=10)
@@ -115,8 +117,9 @@ class TestDataPlaneModel:
 
     @pytest.mark.asyncio
     async def test_decommission_data_plane(self, db_session):
-        from app.models.data_plane import DataPlane
         from sqlalchemy import select
+
+        from app.models.data_plane import DataPlane
 
         async with db_session() as session:
             async with session.begin():

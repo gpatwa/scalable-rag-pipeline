@@ -5,10 +5,10 @@ Ingestion-time metadata enrichment (Layer 1).
 Generates document summaries, extracts tags, and writes metadata
 to the document_metadata Postgres table during ingestion.
 """
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

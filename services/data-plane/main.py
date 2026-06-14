@@ -13,11 +13,12 @@ Key differences from monolith:
   - No Chat UI serving (control plane serves the UI)
   - No /auth/token endpoint
 """
-import os
-import sys
 import asyncio
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 # ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ sys.path.insert(0, _api_dir)
 
 # Also make data-plane's own app importable as dp_app
 sys.path.insert(0, _base_dir)
-import services  # noqa: prevent namespace collision
+
 sys.modules.setdefault("dp_app", __import__("app", fromlist=["app"]))
 # Re-alias so dp_app.auth.control_plane_auth works
 dp_app_path = os.path.join(_base_dir, "app")
@@ -43,26 +44,26 @@ from app.config import settings  # noqa: E402
 object.__setattr__(settings, "DEPLOYMENT_MODE", "data_plane")
 object.__setattr__(settings, "SINGLE_TENANT_MODE", True)
 
-from app.clients.factory import create_llm_client, create_embed_client  # noqa: E402
-from app.clients.vectordb.factory import create_vectordb_client  # noqa: E402
-from app.clients.graphdb.factory import create_graphdb_client  # noqa: E402
-from app.clients.storage.factory import create_storage_client  # noqa: E402
-from app.clients.secrets.factory import create_secrets_client  # noqa: E402
-from app.clients.reranker.factory import create_reranker_client  # noqa: E402
-from app.clients.ray_llm import llm_client  # noqa: E402
-from app.clients.ray_embed import embed_client  # noqa: E402
-from app.cache.redis import redis_client  # noqa: E402
-from app.memory.postgres import init_engine  # noqa: E402
-from app.agents.nodes.retriever import set_clients as set_retriever_clients  # noqa: E402
-from app.cache.semantic import set_vectordb_client as set_semantic_vectordb  # noqa: E402
+from dp_app.auth.control_plane_auth import set_api_key  # noqa: E402
 
 # Data plane specific
 from dp_app.config import dp_settings  # noqa: E402
-from dp_app.auth.control_plane_auth import set_api_key  # noqa: E402
-from dp_app.routes import chat, upload, health  # noqa: E402
-from dp_app.routes.upload import set_storage_client as set_upload_storage  # noqa: E402
-from dp_app.routes.health import set_health_clients, set_health_metadata  # noqa: E402
 from dp_app.registration.heartbeat import registration_loop  # noqa: E402
+from dp_app.routes import chat, health, upload  # noqa: E402
+from dp_app.routes.health import set_health_clients, set_health_metadata  # noqa: E402
+from dp_app.routes.upload import set_storage_client as set_upload_storage  # noqa: E402
+
+from app.agents.nodes.retriever import set_clients as set_retriever_clients  # noqa: E402
+from app.cache.redis import redis_client  # noqa: E402
+from app.cache.semantic import set_vectordb_client as set_semantic_vectordb  # noqa: E402
+from app.clients.graphdb.factory import create_graphdb_client  # noqa: E402
+from app.clients.ray_embed import embed_client  # noqa: E402
+from app.clients.ray_llm import llm_client  # noqa: E402
+from app.clients.reranker.factory import create_reranker_client  # noqa: E402
+from app.clients.secrets.factory import create_secrets_client  # noqa: E402
+from app.clients.storage.factory import create_storage_client  # noqa: E402
+from app.clients.vectordb.factory import create_vectordb_client  # noqa: E402
+from app.memory.postgres import init_engine  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ async def lifespan(app: FastAPI):
         registration_loop(
             control_plane_url=dp_settings.CONTROL_PLANE_URL,
             data_plane_id=dp_settings.DATA_PLANE_ID,
-            data_plane_endpoint=f"http://localhost:8080",  # TODO: configurable
+            data_plane_endpoint="http://localhost:8080",  # TODO: configurable
             api_key=dp_settings.DATA_PLANE_API_KEY,
             internal_api_key=dp_settings.INTERNAL_API_KEY,
             version=dp_settings.APP_VERSION,

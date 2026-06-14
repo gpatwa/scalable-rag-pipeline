@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # db_session fixture provided by conftest.py
 
 
@@ -37,8 +36,9 @@ class TestTenantModel:
 
     @pytest.mark.asyncio
     async def test_create_tenant_in_db(self, db_session):
-        from app.models.tenant import Tenant
         from sqlalchemy import select
+
+        from app.models.tenant import Tenant
 
         async with db_session() as session:
             async with session.begin():
@@ -55,8 +55,9 @@ class TestTenantModel:
 
     @pytest.mark.asyncio
     async def test_update_tenant(self, db_session):
-        from app.models.tenant import Tenant
         from sqlalchemy import select
+
+        from app.models.tenant import Tenant
 
         async with db_session() as session:
             async with session.begin():
@@ -77,8 +78,9 @@ class TestTenantModel:
 
     @pytest.mark.asyncio
     async def test_disable_tenant(self, db_session):
-        from app.models.tenant import Tenant
         from sqlalchemy import select
+
+        from app.models.tenant import Tenant
 
         async with db_session() as session:
             async with session.begin():
@@ -97,8 +99,9 @@ class TestTenantModel:
 
     @pytest.mark.asyncio
     async def test_list_tenants(self, db_session):
-        from app.models.tenant import Tenant
         from sqlalchemy import select
+
+        from app.models.tenant import Tenant
 
         async with db_session() as session:
             async with session.begin():

@@ -5,12 +5,14 @@ JWT authentication for the control plane.
 Supports local HS256 tokens (dev) and external IdP via JWKS (production).
 Same pattern as the monolith but standalone — no imports from services/api/.
 """
-import time
 import logging
+import time
 from typing import Optional
+
 from fastapi import Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+
 from ..config import cp_settings
 
 logger = logging.getLogger(__name__)

@@ -8,10 +8,11 @@ Flow:
   3. Forward request with mTLS → stream response back
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
+
 from ..auth.jwt import get_current_user
-from ..proxy.router import resolve_data_plane
-from ..proxy.streaming import proxy_stream, proxy_json
 from ..middleware.rate_limit import check_rate_limit
+from ..proxy.router import resolve_data_plane
+from ..proxy.streaming import proxy_json, proxy_stream
 
 router = APIRouter()
 

@@ -11,8 +11,9 @@ If heartbeats stop, the control plane marks the data plane as unhealthy
 and stops routing traffic to it.
 """
 import asyncio
-import time
 import logging
+import time
+
 import httpx
 
 logger = logging.getLogger(__name__)

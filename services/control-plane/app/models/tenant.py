@@ -5,8 +5,10 @@ Tenant model for the control plane database.
 Each tenant represents a customer organization that has one or more
 data planes deployed in their environment.
 """
-from sqlalchemy import Column, String, Integer, Boolean, JSON, DateTime
 from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String
+
 from ..db import Base
 
 
