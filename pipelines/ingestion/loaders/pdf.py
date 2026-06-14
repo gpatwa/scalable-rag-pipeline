@@ -1,10 +1,11 @@
 # pipelines/ingestion/loaders/pdf.py
+import base64
+import logging
 import os
 import re
-import base64
 import tempfile
-import logging
-from typing import Tuple, Dict, Any, List
+from typing import Any, Dict, List, Tuple
+
 from unstructured.partition.pdf import partition_pdf
 
 logger = logging.getLogger(__name__)

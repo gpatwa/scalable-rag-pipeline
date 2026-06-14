@@ -8,7 +8,9 @@ and marks data planes as unhealthy if their heartbeat is stale.
 import asyncio
 import logging
 from datetime import datetime, timedelta
+
 from sqlalchemy import select
+
 from .. import db as db_module
 from ..models.data_plane import DataPlane
 from ..proxy.router import invalidate_cache

@@ -5,8 +5,9 @@ Control Plane database engine.
 Uses async SQLAlchemy with the control plane's own database
 (separate from the data plane's Postgres for chat history).
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 from .config import cp_settings
 
 Base = declarative_base()

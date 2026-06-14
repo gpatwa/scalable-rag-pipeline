@@ -1,8 +1,9 @@
 # pipelines/ingestion/indexing/qdrant.py
+import logging
 import os
 import uuid
-import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 

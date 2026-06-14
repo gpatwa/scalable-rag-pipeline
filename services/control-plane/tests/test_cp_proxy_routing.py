@@ -9,7 +9,6 @@ from datetime import datetime
 
 import pytest
 
-
 # db_session fixture provided by conftest.py
 
 
@@ -93,7 +92,7 @@ class TestCacheInvalidation:
     @pytest.mark.asyncio
     async def test_cache_invalidation_specific_tenant(self, db_session):
         from app.models.data_plane import DataPlane
-        from app.proxy.router import resolve_data_plane, invalidate_cache, _cache
+        from app.proxy.router import _cache, invalidate_cache, resolve_data_plane
 
         async with db_session() as session:
             async with session.begin():
@@ -115,7 +114,7 @@ class TestCacheInvalidation:
     @pytest.mark.asyncio
     async def test_cache_invalidation_all(self, db_session):
         from app.models.data_plane import DataPlane
-        from app.proxy.router import resolve_data_plane, invalidate_cache, _cache
+        from app.proxy.router import _cache, invalidate_cache, resolve_data_plane
 
         async with db_session() as session:
             async with session.begin():

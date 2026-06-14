@@ -14,21 +14,21 @@ The SaaS management layer that handles:
 This service has its own database (separate from data plane databases)
 and communicates with data planes via REST + optional mTLS.
 """
-import os
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from app.config import cp_settings
-from app.db import init_engine, create_tables
+from app.db import create_tables, init_engine
 from app.proxy.mtls import close_mtls_client
 from app.registry.manager import health_monitor_loop
-from app.routes import auth, tenants, data_planes, proxy, admin_health
-from app.routes import usage
+from app.routes import admin_health, auth, data_planes, proxy, tenants, usage
 
 logger = logging.getLogger(__name__)
 

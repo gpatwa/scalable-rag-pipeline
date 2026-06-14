@@ -9,10 +9,10 @@ Usage:
 """
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import uuid
-import logging
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

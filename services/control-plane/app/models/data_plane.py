@@ -5,8 +5,10 @@ Data Plane registry model.
 Tracks all registered data plane instances, their health status,
 and maps them to tenants for request routing.
 """
-from sqlalchemy import Column, String, Integer, DateTime
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, String
+
 from ..db import Base
 
 

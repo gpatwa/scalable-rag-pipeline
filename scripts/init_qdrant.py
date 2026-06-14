@@ -3,8 +3,8 @@
 Creates required Qdrant collections for local development.
 Collections: rag_collection (main retrieval), semantic_cache (query cache).
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

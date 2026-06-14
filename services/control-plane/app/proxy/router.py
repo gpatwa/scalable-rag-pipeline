@@ -5,11 +5,13 @@ Tenant-to-DataPlane routing.
 Resolves a tenant_id to the appropriate data plane endpoint URL.
 Maintains an in-memory cache with TTL for fast lookups.
 """
-import time
 import logging
-from typing import Optional
+import time
 from dataclasses import dataclass
+from typing import Optional
+
 from sqlalchemy import select
+
 from .. import db as db_module
 from ..models.data_plane import DataPlane
 

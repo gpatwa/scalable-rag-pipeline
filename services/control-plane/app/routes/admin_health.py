@@ -3,9 +3,10 @@
 Health and admin dashboard endpoints for the control plane.
 """
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
-from ..auth.jwt import require_admin
+from sqlalchemy import func, select
+
 from .. import db as db_module
+from ..auth.jwt import require_admin
 from ..models.data_plane import DataPlane
 from ..models.tenant import Tenant
 

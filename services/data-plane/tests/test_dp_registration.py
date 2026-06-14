@@ -8,10 +8,9 @@ Run with:
     pytest services/data-plane/tests/test_dp_registration.py -v
 """
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-
 
 # Path setup and env vars handled by conftest.py
 

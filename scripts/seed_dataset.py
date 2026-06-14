@@ -35,13 +35,11 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
 import pandas as pd
 import psycopg2
-import sqlalchemy as sa
-from sqlalchemy import text
 
 # ── ENV Setup ─────────────────────────────────────────────────────────
 
@@ -122,7 +120,6 @@ def detect_fk_columns(df: pd.DataFrame, table_name: str) -> List[str]:
 def detect_relationships(tables: Dict[str, pd.DataFrame]) -> List[dict]:
     """Auto-detect FK relationships between tables by matching column names."""
     relationships = []
-    table_names = list(tables.keys())
 
     for i, (t1_name, t1_df) in enumerate(tables.items()):
         for t2_name, t2_df in list(tables.items())[i + 1:]:
@@ -438,14 +435,14 @@ def generate_python_schema_module(
         lines.append(f'    "{tname}": {{')
         lines.append(f'        "description": "Table with {len(df):,} rows, {len(df.columns)} columns",')
         lines.append(f'        "row_count_approx": {len(df)},')
-        lines.append(f'        "columns": {{')
+        lines.append('        "columns": {')
         for col in df.columns:
             ctype = infer_column_type(df[col])
             cdesc = generate_column_description(col, df[col]).replace('"', '\\"')
             lines.append(f'            "{col}": {{"type": "{ctype}", "description": "{cdesc}"}},')
-        lines.append(f'        }},')
+        lines.append('        },')
         lines.append(f'        "keywords": {kws},')
-        lines.append(f'    }},')
+        lines.append('    },')
 
     lines.append("}")
     lines.append("")
@@ -460,7 +457,7 @@ def generate_python_schema_module(
         lines.append(f'    "{metric_name}": {{')
         lines.append(f'        "sql": "{metric_info["sql"]}",')
         lines.append(f'        "description": "{metric_info["description"]}",')
-        lines.append(f'    }},')
+        lines.append('    },')
     lines.append("}")
 
     py_path = output_dir / "schema_context_gen.py"
@@ -530,7 +527,7 @@ Examples:
         csv_files = sorted(data_dir.glob("*.csv"))
 
     if not csv_files:
-        print(f"No CSV files found. Provide a path or use --kaggle to download.")
+        print("No CSV files found. Provide a path or use --kaggle to download.")
         sys.exit(1)
 
     # Check loaded marker
@@ -597,12 +594,12 @@ Examples:
     print(f"  Schema context: data/{args.name}/schema_context.yaml")
     print(f"  Python module: data/{args.name}/schema_context_gen.py")
     print(f"{'=' * 60}")
-    print(f"\nNext steps:")
+    print("\nNext steps:")
     print(f"  1. Review/edit data/{args.name}/schema_context.yaml")
-    print(f"     (add descriptions, fix column names, define business metrics)")
-    print(f"  2. Set DATA_ANALYTICS_ENABLED=true in .env")
+    print("     (add descriptions, fix column names, define business metrics)")
+    print("  2. Set DATA_ANALYTICS_ENABLED=true in .env")
     print(f"  3. Set ANALYTICS_DATASET={args.name} in .env (optional)")
-    print(f"  4. Restart: make dev")
+    print("  4. Restart: make dev")
 
 
 if __name__ == "__main__":

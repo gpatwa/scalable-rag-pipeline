@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # Path setup and env vars handled by conftest.py
 
 
@@ -16,11 +15,12 @@ class TestAPIKeyValidation:
 
     @pytest.mark.asyncio
     async def test_valid_api_key(self):
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
-        from unittest.mock import MagicMock
 
         set_api_key("test-dp-key-123")
 
@@ -37,12 +37,13 @@ class TestAPIKeyValidation:
 
     @pytest.mark.asyncio
     async def test_invalid_api_key(self):
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
         from fastapi import HTTPException
-        from unittest.mock import MagicMock
 
         set_api_key("correct-key")
 
@@ -58,12 +59,13 @@ class TestAPIKeyValidation:
 
     @pytest.mark.asyncio
     async def test_missing_api_key_when_configured(self):
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
         from fastapi import HTTPException
-        from unittest.mock import MagicMock
 
         set_api_key("configured-key")
 
@@ -77,11 +79,12 @@ class TestAPIKeyValidation:
     @pytest.mark.asyncio
     async def test_no_api_key_configured_allows_all(self):
         """When no API key is set (dev mode), all requests pass."""
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
-        from unittest.mock import MagicMock
 
         set_api_key("")  # No key configured
 
@@ -98,11 +101,12 @@ class TestUserContextExtraction:
 
     @pytest.mark.asyncio
     async def test_extracts_user_headers(self):
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
-        from unittest.mock import MagicMock
 
         set_api_key("")
 
@@ -118,11 +122,12 @@ class TestUserContextExtraction:
 
     @pytest.mark.asyncio
     async def test_defaults_for_missing_headers(self):
+        from unittest.mock import MagicMock
+
         from dp_app.auth.control_plane_auth import (
             set_api_key,
             validate_control_plane_request,
         )
-        from unittest.mock import MagicMock
 
         set_api_key("")
 
@@ -139,7 +144,7 @@ class TestDataPlaneContext:
 
     def test_tenant_context_uses_default_tenant(self):
         """In data plane mode, tenant_id should always be DEFAULT_TENANT_ID."""
-        from app.auth.tenant import TenantContext, DEFAULT_TENANT_ID
+        from app.auth.tenant import DEFAULT_TENANT_ID, TenantContext
 
         ctx = TenantContext(
             tenant_id=DEFAULT_TENANT_ID,

@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """
 Generate professional RAG Platform architecture diagram.
 Output: docs/images/00-rag-platform-overview.png
 """
 
 import os
+
 os.chdir("/Users/gopalpatwa/opt/scalable-rag-pipeline")
 
-from diagrams import Diagram, Cluster, Edge
-from diagrams.aws.compute import EKS
+from diagrams import Cluster, Diagram, Edge
 from diagrams.aws.database import Aurora, ElastiCache
-from diagrams.aws.storage import S3
 from diagrams.aws.network import ALB
 from diagrams.aws.security import SecretsManager
-from diagrams.azure.compute import KubernetesServices
-from diagrams.azure.database import DatabaseForPostgresqlServers, CacheForRedis
-from diagrams.azure.storage import BlobStorage
-from diagrams.azure.security import KeyVaults
+from diagrams.aws.storage import S3
+from diagrams.azure.database import CacheForRedis, DatabaseForPostgresqlServers
 from diagrams.azure.network import LoadBalancers as AzureLB
-from diagrams.k8s.network import Ingress
-from diagrams.k8s.compute import Deploy, Pod
-from diagrams.onprem.monitoring import Grafana, Prometheus
-from diagrams.onprem.tracing import Jaeger
-from diagrams.onprem.database import Neo4J
-from diagrams.onprem.ci import GithubActions
-from diagrams.programming.framework import FastAPI
+from diagrams.azure.security import KeyVaults
+from diagrams.azure.storage import BlobStorage
 from diagrams.generic.compute import Rack
 from diagrams.generic.device import Tablet
+from diagrams.k8s.compute import Deploy
+from diagrams.k8s.network import Ingress
+from diagrams.onprem.ci import GithubActions
+from diagrams.onprem.database import Neo4J
+from diagrams.onprem.monitoring import Grafana, Prometheus
+from diagrams.onprem.tracing import Jaeger
+from diagrams.programming.framework import FastAPI
 from diagrams.saas.identity import Auth0
 
 graph_attr = {

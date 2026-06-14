@@ -30,14 +30,20 @@ async def db_session():
     calling create_tables(). Each test gets a fresh DB.
     """
     import app.db as db_module
-    from app.db import init_engine, create_tables
+    import app.models.data_plane  # noqa: F401
 
     # Import ALL models so Base.metadata has all tables
     import app.models.tenant  # noqa: F401
-    import app.models.data_plane  # noqa: F401
     import app.models.usage  # noqa: F401
+    from app.db import create_tables, init_engine
 
     init_engine("sqlite+aiosqlite:///:memory:")
     await create_tables()
     # Access the module-level attribute (not a stale local copy)
-    yield db_module.AsyncSessionLocal
+    try:
+        yield db_module.AsyncSessionLocal
+    finally:
+        if db_module.engine is not None:
+            await db_module.engine.dispose()
+        db_module.engine = None
+        db_module.AsyncSessionLocal = None

@@ -1,8 +1,12 @@
 # pipelines/ingestion/graph/extractor.py
 import json
+from textwrap import dedent
+from typing import Any, Dict
+
 import httpx
-from typing import Dict, Any, List
+
 from pipelines.ingestion.graph.schema import GraphSchema
+
 
 class GraphExtractor:
     """
@@ -21,38 +25,40 @@ class GraphExtractor:
         """
         nodes_list = []
         edges_list = []
-        
+
         # Iterate through chunks in the batch
         for text in batch["text"]:
             try:
                 # 1. Construct Prompt
-                prompt = f"""
-                {GraphSchema.get_system_prompt()}
-                
-                Input Text:
-                {text}
-                """
-                
+                prompt = dedent(
+                    f"""
+                    {GraphSchema.get_system_prompt()}
+
+                    Input Text:
+                    {text}
+                    """
+                ).strip()
+
                 # 2. Call LLM (Llama-3-70B)
                 response = self.client.post(
                     self.llm_endpoint,
                     json={
                         "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.0, # Deterministic output
-                        "max_tokens": 1024
+                        "temperature": 0.0,  # Deterministic output
+                        "max_tokens": 1024,
                     }
                 )
                 response.raise_for_status()
-                
+
                 # 3. Parse JSON Output
                 # We assume the model returns valid JSON (guaranteed by constrained decoding or post-processing)
                 content = response.json()["choices"][0]["message"]["content"]
                 graph_data = json.loads(content)
-                
+
                 # 4. Append to results
                 nodes_list.append(graph_data.get("nodes", []))
                 edges_list.append(graph_data.get("edges", []))
-                
+
             except Exception as e:
                 # Log error but don't crash the pipeline; return empty graph for this chunk
                 print(f"Graph extraction failed for chunk: {e}")

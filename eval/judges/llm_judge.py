@@ -1,8 +1,7 @@
 # eval/judges/llm_judge.py
-import asyncio
 from pydantic import BaseModel
-from typing import List
 from services.api.app.clients.ray_llm import llm_client
+
 
 class Grade(BaseModel):
     score: int
@@ -29,7 +28,7 @@ async def grade_answer(question: str, ground_truth: str, system_answer: str) -> 
     Calls the LLM to grade a single QA pair.
     """
     import json
-    
+
     try:
         response_text = await llm_client.chat_completion(
             messages=[{"role": "user", "content": JUDGE_PROMPT.format(
@@ -39,10 +38,10 @@ async def grade_answer(question: str, ground_truth: str, system_answer: str) -> 
             )}],
             temperature=0.0
         )
-        
+
         # Parse JSON output
         data = json.loads(response_text)
         return Grade(**data)
-        
+
     except Exception as e:
         return Grade(score=0, reasoning=f"Judge Error: {e}")

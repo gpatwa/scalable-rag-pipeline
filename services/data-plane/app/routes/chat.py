@@ -8,24 +8,25 @@ monolith chat route:
   - No multi-tenant resolution (single-tenant mode)
   - User identity from X-User-Id/X-User-Role headers
 """
-import uuid
+import asyncio
 import json
 import logging
-import asyncio
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+import uuid
 from typing import Optional
-
-# Shared code from services/api/app/ (added to sys.path in main.py)
-from app.auth.tenant import TenantContext
-from app.agents.graph import create_agent
-from app.agents.state import AgentState
-from app.cache.semantic import semantic_cache
-from app.memory.postgres import postgres_memory, extract_and_store_memories
 
 # Data plane auth
 from dp_app.auth.control_plane_auth import get_data_plane_context
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from app.agents.graph import create_agent
+from app.agents.state import AgentState
+
+# Shared code from services/api/app/ (added to sys.path in main.py)
+from app.auth.tenant import TenantContext
+from app.cache.semantic import semantic_cache
+from app.memory.postgres import extract_and_store_memories, postgres_memory
 
 logger = logging.getLogger(__name__)
 

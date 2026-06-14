@@ -4,8 +4,8 @@ Loader for standalone image files (PNG, JPEG).
 Returns the same 3-tuple format as other loaders for multimodal pipeline consistency.
 """
 import logging
-from typing import Tuple, Dict, Any, List
 from io import BytesIO
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 

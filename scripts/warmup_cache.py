@@ -1,5 +1,6 @@
 # scripts/warmup_cache.py
 import asyncio
+
 from services.api.app.cache.semantic import semantic_cache
 
 # List of Frequently Asked Questions

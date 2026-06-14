@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # db_session fixture provided by conftest.py
 
 
@@ -23,8 +22,9 @@ class TestUsageModel:
 
     @pytest.mark.asyncio
     async def test_create_usage_event(self, db_session):
-        from app.models.usage import UsageEvent
         from sqlalchemy import select
+
+        from app.models.usage import UsageEvent
 
         async with db_session() as session:
             async with session.begin():
@@ -48,8 +48,9 @@ class TestUsageModel:
 
     @pytest.mark.asyncio
     async def test_multiple_usage_events(self, db_session):
+        from sqlalchemy import func, select
+
         from app.models.usage import UsageEvent
-        from sqlalchemy import select, func
 
         async with db_session() as session:
             async with session.begin():

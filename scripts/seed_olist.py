@@ -12,12 +12,10 @@ Usage:
 
 Kaggle dataset: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
 """
+import io
 import os
 import sys
 from pathlib import Path
-
-import csv
-import io
 
 import pandas as pd
 import psycopg2
@@ -94,7 +92,7 @@ def check_csvs_exist() -> bool:
         print(f"Missing CSV files in {DATA_DIR}:")
         for f in missing:
             print(f"  - {f}")
-        print(f"\nDownload from: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce")
+        print("\nDownload from: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce")
         print(f"Place all CSV files in: {DATA_DIR}/")
         return False
     return True

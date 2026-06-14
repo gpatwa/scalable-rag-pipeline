@@ -6,12 +6,13 @@ Records usage events from data planes and provides admin
 endpoints for querying usage by tenant.
 """
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from typing import Optional
-from sqlalchemy import select, func
-from ..auth.jwt import require_admin, validate_internal_key
+from sqlalchemy import func, select
+
 from .. import db as db_module
+from ..auth.jwt import require_admin, validate_internal_key
 from ..models.usage import UsageEvent
 
 router = APIRouter()

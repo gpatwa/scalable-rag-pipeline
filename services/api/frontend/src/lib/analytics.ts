@@ -103,7 +103,6 @@ export function track(name: EventName, props: EventProps = {}): void {
   // adding a `vite/client` triple-slash reference (we don't want global types).
   const dev = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
   if (dev) {
-    // eslint-disable-next-line no-console
     console.debug('[analytics]', name, enriched);
   }
   getQueue().push({ name, props: enriched, ts: Date.now() });

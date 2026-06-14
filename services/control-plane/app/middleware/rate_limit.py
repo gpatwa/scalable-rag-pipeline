@@ -6,15 +6,17 @@ Enforces requests-per-minute limits based on each tenant's `rate_limit_rpm`
 setting from the database. Uses an in-memory sliding window counter
 (production deployments should use Redis for distributed rate limiting).
 """
-import time
 import logging
+import time
 from collections import defaultdict
 from typing import Optional
-from fastapi import Request, HTTPException
+
+from fastapi import HTTPException
 from sqlalchemy import select
+
 from .. import db as db_module
-from ..models.tenant import Tenant
 from ..config import cp_settings
+from ..models.tenant import Tenant
 
 logger = logging.getLogger(__name__)
 

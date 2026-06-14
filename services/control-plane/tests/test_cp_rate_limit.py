@@ -7,7 +7,6 @@ Run with:
 """
 import pytest
 
-
 # db_session fixture provided by conftest.py
 
 
@@ -34,8 +33,9 @@ class TestRateLimiting:
 
     @pytest.mark.asyncio
     async def test_rate_limit_blocks_over_limit(self, db_session):
-        from app.middleware.rate_limit import check_rate_limit
         from fastapi import HTTPException
+
+        from app.middleware.rate_limit import check_rate_limit
 
         # Send requests up to the default limit (10)
         for _ in range(10):
@@ -48,8 +48,9 @@ class TestRateLimiting:
 
     @pytest.mark.asyncio
     async def test_rate_limit_per_tenant_isolation(self, db_session):
-        from app.middleware.rate_limit import check_rate_limit
         from fastapi import HTTPException
+
+        from app.middleware.rate_limit import check_rate_limit
 
         # Fill up tenant-a's limit
         for _ in range(10):
@@ -65,9 +66,10 @@ class TestRateLimiting:
     @pytest.mark.asyncio
     async def test_rate_limit_uses_tenant_config(self, db_session):
         """Tenant with custom rate limit should use that limit."""
+        from fastapi import HTTPException
+
         from app.middleware.rate_limit import check_rate_limit
         from app.models.tenant import Tenant
-        from fastapi import HTTPException
 
         # Create tenant with custom rate limit of 3
         async with db_session() as session:

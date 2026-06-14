@@ -1,7 +1,8 @@
 # pipelines/ingestion/indexing/neo4j.py
-from neo4j import GraphDatabase
-from typing import Dict, Any, List
 import os
+from typing import Any, Dict, List
+
+from neo4j import GraphDatabase
 
 DEFAULT_TENANT_ID = "default"
 

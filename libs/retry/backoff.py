@@ -22,13 +22,13 @@ def exponential_backoff(max_retries: int = 3, base_delay: float = 1.0, max_delay
                     if retries >= max_retries:
                         logger.error(f"Max retries reached for {func.__name__}: {e}")
                         raise e
-                    
+
                     # Algorithm: base * (2 ^ retries) + random_jitter
                     # Jitter prevents "Thundering Herd" problem on the server
                     delay = min(base_delay * (2 ** retries), max_delay)
                     jitter = random.uniform(0, 0.5)
                     sleep_time = delay + jitter
-                    
+
                     logger.warning(f"Error in {func.__name__}: {e}. Retrying in {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
                     retries += 1

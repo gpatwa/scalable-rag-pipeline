@@ -58,7 +58,6 @@ export async function* chatStream({
           yield JSON.parse(line) as ChatEvent;
         } catch {
           // Tolerate malformed lines; do not crash the whole stream.
-          // eslint-disable-next-line no-console
           console.warn('Bad NDJSON line:', line);
         }
       }

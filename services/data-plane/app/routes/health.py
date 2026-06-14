@@ -6,6 +6,7 @@ Provides standard K8s probes plus a /health/info endpoint
 returning data plane metadata for the control plane.
 """
 import time
+
 from fastapi import APIRouter
 
 router = APIRouter()

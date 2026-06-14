@@ -5,11 +5,12 @@ Authentication routes for the control plane.
 Provides a dev token endpoint (disabled in production).
 In production, clients authenticate via external IdP (Auth0, Azure AD, Cognito).
 """
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-from ..config import cp_settings
+
 from ..auth.jwt import create_token
+from ..config import cp_settings
 
 router = APIRouter()
 

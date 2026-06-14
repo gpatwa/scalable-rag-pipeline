@@ -2,8 +2,10 @@
 """
 Usage tracking model for billing and analytics.
 """
-from sqlalchemy import Column, String, Integer, DateTime
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Integer, String
+
 from ..db import Base
 
 
