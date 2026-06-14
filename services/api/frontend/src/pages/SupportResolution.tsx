@@ -3,20 +3,20 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  Bug,
+  Bot,
   ClipboardCheck,
   CheckCircle2,
+  Copy,
   Database,
   ExternalLink,
-  FileText,
   LifeBuoy,
   Loader2,
-  MessageSquare,
   PlayCircle,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
+  Terminal,
   Ticket,
   TrendingDown,
 } from 'lucide-react';
@@ -66,7 +66,7 @@ const PIPELINE = [
   { label: 'Ask', body: 'Describe the recurring support issue' },
   { label: 'Match', body: 'Find repeat clusters and solved cases' },
   { label: 'Build', body: 'Generate a cited resolution workflow' },
-  { label: 'Review', body: 'Draft macro, KB, or product follow-up' },
+  { label: 'Command', body: 'Create an agent-ready execution prompt' },
 ] as const;
 
 const ASK_SUGGESTIONS = [
@@ -591,7 +591,7 @@ function AskToResolutionPanel({
             </p>
           )}
           <div className="mt-4 rounded-lg border border-knowledge/20 bg-knowledge/10 p-3 text-xs text-fg-secondary">
-            Review required. Compass drafts the path and keeps citations visible before any customer-facing action.
+            Review required. Compass prepares an agent command and keeps citations visible before any customer-facing action.
           </div>
         </div>
       </div>
@@ -752,7 +752,7 @@ function WorkflowPanel({
                 </ul>
               </article>
 
-              <ActionDrafts workflow={workflow} />
+              <AgentCommandAction workflow={workflow} />
 
               <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
                 <div className="text-xs uppercase tracking-wider text-fg-muted">Evidence and guardrails</div>
@@ -791,57 +791,113 @@ function WorkflowPanel({
   );
 }
 
-function ActionDrafts({ workflow }: { workflow: SupportResolutionWorkflow }) {
-  const drafts = [
-    {
-      icon: MessageSquare,
-      label: 'Draft macro',
-      title: workflow.playbook.title,
-      body: workflow.playbook.customer_response_draft,
-    },
-    {
-      icon: FileText,
-      label: 'Draft KB update',
-      title: workflow.knowledge_gap.article_title,
-      body: workflow.knowledge_gap.recommendation,
-    },
-    {
-      icon: Bug,
-      label: 'Create product bug',
-      title: workflow.cluster.title,
-      body: `Attach ${workflow.cluster.count} related tickets and the playbook evidence so product can confirm the root cause.`,
-    },
-    {
-      icon: CheckCircle2,
-      label: 'Mark for review',
-      title: formatLabel(workflow.playbook.verification_status),
-      body: workflow.playbook.guardrails[0] || 'Keep the generated output in human review before publishing.',
-    },
-  ];
+function AgentCommandAction({ workflow }: { workflow: SupportResolutionWorkflow }) {
+  const [copied, setCopied] = useState(false);
+  const command = buildAgentCommand(workflow);
+
+  const copyCommand = () => {
+    void copyText(command).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    });
+  };
 
   return (
     <article className="rounded-xl border border-accent/25 bg-accent/5 p-4">
-      <div className="text-xs uppercase tracking-wider text-fg-muted">Read-only action drafts</div>
-      <p className="text-xs text-fg-secondary mt-2">
-        Demo actions are generated locally; Zendesk, Jira, and KB write-back stay disabled.
-      </p>
-      <div className="mt-3 space-y-2">
-        {drafts.map((draft) => {
-          const Icon = draft.icon;
-          return (
-            <div key={draft.label} className="rounded-lg border border-border/70 bg-bg/30 p-3">
-              <div className="flex items-center gap-2">
-                <Icon className="w-3.5 h-3.5 text-accent" />
-                <div className="text-xs font-medium">{draft.label}</div>
-              </div>
-              <div className="text-sm font-semibold mt-2">{draft.title}</div>
-              <p className="text-xs text-fg-secondary mt-1 leading-relaxed line-clamp-3">{draft.body}</p>
-            </div>
-          );
-        })}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-fg-muted">
+            <Bot className="w-3.5 h-3.5 text-accent" />
+            Agent execution command
+          </div>
+          <h3 className="font-semibold mt-2">Prepare follow-up work for an agent</h3>
+          <p className="text-xs text-fg-secondary mt-2 leading-relaxed">
+            Copy this command for manual execution today; future integrations can route the same
+            intent to Zendesk, Jira, or a KB writer.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={copyCommand}>
+          {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+      <div className="mt-3 rounded-lg border border-border/70 bg-bg/40 overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-[11px] uppercase tracking-wider text-fg-muted">
+          <Terminal className="w-3.5 h-3.5" />
+          support.agent.execute
+        </div>
+        <pre className="max-h-72 overflow-auto p-3 text-xs leading-relaxed text-fg-secondary whitespace-pre-wrap break-words">
+          {command}
+        </pre>
       </div>
     </article>
   );
+}
+
+function buildAgentCommand(workflow: SupportResolutionWorkflow) {
+  const citations = workflow.playbook.citations
+    .slice(0, 5)
+    .map((citation) => `- ${citation.label}: ${citation.title || citation.source_id || citation.source_type}`)
+    .join('\n');
+  const guardrails = workflow.playbook.guardrails.map((guardrail) => `- ${guardrail}`).join('\n');
+  const steps = workflow.playbook.resolution_steps.map((step, idx) => `${idx + 1}. ${step}`).join('\n');
+
+  return [
+    '/support.agent.execute',
+    `cluster: ${workflow.cluster.title}`,
+    `objective: Reduce repeat tickets by preparing reviewed support follow-up for ${workflow.cluster.count} related ticket(s).`,
+    `confidence: ${workflow.playbook.confidence}`,
+    '',
+    'tasks:',
+    '- Validate the cited solved cases and article evidence.',
+    '- Draft or update a support macro using the customer response draft.',
+    `- Draft or update KB article: ${workflow.knowledge_gap.article_title}.`,
+    '- Create a product follow-up if evidence points to a product defect or stale behavior.',
+    '- Return a review checklist before anything is published or sent.',
+    '',
+    'recommended_resolution:',
+    workflow.playbook.recommended_resolution,
+    '',
+    'resolution_steps:',
+    steps,
+    '',
+    'customer_response_draft:',
+    workflow.playbook.customer_response_draft,
+    '',
+    'knowledge_gap:',
+    workflow.knowledge_gap.recommendation,
+    '',
+    'deflection_estimate:',
+    `${workflow.deflection_estimate.potential_ticket_count} ticket(s); ${workflow.deflection_estimate.rationale}`,
+    '',
+    'evidence:',
+    citations || '- No citations available; keep this in human review.',
+    '',
+    'guardrails:',
+    guardrails || '- Human review required before any customer-facing action.',
+  ].join('\n');
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall back to a temporary textarea when browser permissions block clipboard access.
+    }
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = value;
+  textArea.setAttribute('readonly', 'true');
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '0';
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textArea);
 }
 
 function WorkflowStep({ label, title, body }: { label: string; title: string; body: string }) {
