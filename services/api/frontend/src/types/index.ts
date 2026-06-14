@@ -429,6 +429,41 @@ export interface SupportResolutionWorkflowResponse {
   workflow: SupportResolutionWorkflow;
 }
 
+export type SupportActionStatus =
+  | 'generated'
+  | 'needs_review'
+  | 'approved'
+  | 'ready_to_execute'
+  | 'rejected'
+  | string;
+
+export interface SupportAction {
+  id: string;
+  tenant_id: string;
+  created_by: string;
+  action_type: string;
+  status: SupportActionStatus;
+  cluster_id: string | null;
+  cluster_title: string;
+  command_text: string;
+  workflow: Record<string, unknown>;
+  review_notes: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  ready_at: string | null;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportActionsResponse {
+  actions: SupportAction[];
+}
+
+export interface SupportActionResponse {
+  action: SupportAction;
+}
+
 export interface SupportJob {
   id: string;
   tenant_id: string;

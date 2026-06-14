@@ -31,6 +31,7 @@ async def init_postgres():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _repair_local_support_jobs_schema(conn)
+        await _repair_local_support_actions_schema(conn)
 
     from sqlalchemy import inspect
     async with engine.connect() as conn:
@@ -61,6 +62,45 @@ async def _repair_local_support_jobs_schema(conn):
         ),
         "CREATE INDEX IF NOT EXISTS idx_support_job_status_locked ON support_jobs (status, locked_at)",
         "CREATE INDEX IF NOT EXISTS idx_support_job_type_status ON support_jobs (job_type, status)",
+    ]
+    for statement in repair_statements:
+        await conn.execute(text(statement))
+
+
+async def _repair_local_support_actions_schema(conn):
+    """Create the local approval queue table for dev DBs initialized via legacy imports."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS support_actions (
+                id VARCHAR(64) PRIMARY KEY,
+                tenant_id VARCHAR(255) NOT NULL,
+                created_by VARCHAR(255) NOT NULL,
+                action_type VARCHAR(64) NOT NULL DEFAULT 'support_agent_command',
+                status VARCHAR(32) NOT NULL DEFAULT 'generated',
+                cluster_id VARCHAR(255) NULL,
+                cluster_title VARCHAR(500) NOT NULL,
+                command_text TEXT NOT NULL,
+                workflow JSON NULL,
+                review_notes TEXT NULL,
+                approved_by VARCHAR(255) NULL,
+                approved_at TIMESTAMP NULL,
+                ready_at TIMESTAMP NULL,
+                rejected_at TIMESTAMP NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT now(),
+                updated_at TIMESTAMP NOT NULL DEFAULT now()
+            )
+            """
+        )
+    )
+    repair_statements = [
+        "CREATE INDEX IF NOT EXISTS ix_support_actions_tenant_id ON support_actions (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_support_actions_status ON support_actions (status)",
+        (
+            "CREATE INDEX IF NOT EXISTS idx_support_action_tenant_status_created "
+            "ON support_actions (tenant_id, status, created_at)"
+        ),
+        "CREATE INDEX IF NOT EXISTS idx_support_action_tenant_cluster ON support_actions (tenant_id, cluster_id)",
     ]
     for statement in repair_statements:
         await conn.execute(text(statement))

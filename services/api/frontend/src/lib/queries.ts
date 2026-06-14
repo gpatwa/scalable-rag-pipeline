@@ -19,6 +19,9 @@ import type {
   SupportAuthMode,
   SupportCatalogResponse,
   SupportConnectionsResponse,
+  SupportActionResponse,
+  SupportActionsResponse,
+  SupportActionStatus,
   SupportJobResponse,
   SupportJobSummaryResponse,
   SupportJobsResponse,
@@ -56,6 +59,7 @@ export const queryKeys = {
   } = {}) => ['support', 'insights', 'repeats', opts] as const,
   supportJobs: ['support', 'jobs'] as const,
   supportJobSummary: ['support', 'jobs', 'summary'] as const,
+  supportActions: ['support', 'actions'] as const,
   mcpCatalog: ['mcp', 'catalog'] as const,
   mcpConnections: ['mcp', 'connections'] as const,
 };
@@ -282,6 +286,49 @@ export function useBuildSupportResolutionWorkflow() {
     }
   >({
     mutationFn: (opts) => api.buildSupportResolutionWorkflow(opts),
+  });
+}
+
+export function useSupportActions(limit = 20) {
+  return useQuery<SupportActionsResponse>({
+    queryKey: [...queryKeys.supportActions, limit],
+    queryFn: () => api.listSupportActions(limit),
+    staleTime: 5_000,
+  });
+}
+
+export function useCreateSupportAction() {
+  const qc = useQueryClient();
+  return useMutation<
+    SupportActionResponse,
+    Error,
+    {
+      cluster_id?: string | null;
+      cluster_title: string;
+      command_text: string;
+      workflow: Record<string, unknown>;
+      action_type?: string;
+    }
+  >({
+    mutationFn: (body) => api.createSupportAction(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.supportActions });
+    },
+  });
+}
+
+export function useUpdateSupportActionStatus() {
+  const qc = useQueryClient();
+  return useMutation<
+    SupportActionResponse,
+    Error,
+    { actionId: string; status: SupportActionStatus; review_notes?: string | null }
+  >({
+    mutationFn: ({ actionId, status, review_notes }) =>
+      api.updateSupportActionStatus(actionId, { status, review_notes }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.supportActions });
+    },
   });
 }
 

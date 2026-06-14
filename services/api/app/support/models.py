@@ -219,3 +219,31 @@ class SupportJob(Base):
         Index("idx_support_job_status_locked", "status", "locked_at"),
         Index("idx_support_job_type_status", "job_type", "status"),
     )
+
+
+class SupportAction(Base):
+    __tablename__ = "support_actions"
+
+    id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(255), nullable=False, index=True)
+    created_by = Column(String(255), nullable=False)
+    action_type = Column(String(64), nullable=False, default="support_agent_command")
+    status = Column(String(32), nullable=False, default="generated", index=True)
+    cluster_id = Column(String(255), nullable=True)
+    cluster_title = Column(String(500), nullable=False)
+    command_text = Column(Text, nullable=False)
+    workflow = Column(JSON, default=dict)
+    review_notes = Column(Text, nullable=True)
+    approved_by = Column(String(255), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    ready_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("idx_support_action_tenant_status_created", "tenant_id", "status", "created_at"),
+        Index("idx_support_action_tenant_cluster", "tenant_id", "cluster_id"),
+    )

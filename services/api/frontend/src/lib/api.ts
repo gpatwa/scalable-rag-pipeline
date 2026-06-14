@@ -238,6 +238,36 @@ export const api = {
     if (!res.ok) throw new Error(`buildSupportResolutionWorkflow failed: ${res.status}`);
     return res.json();
   },
+  async listSupportActions(limit = 20): Promise<import('@/types').SupportActionsResponse> {
+    const res = await authedFetch(`/support/actions?limit=${limit}`);
+    if (!res.ok) throw new Error(`listSupportActions failed: ${res.status}`);
+    return res.json();
+  },
+  async createSupportAction(body: {
+    cluster_id?: string | null;
+    cluster_title: string;
+    command_text: string;
+    workflow: Record<string, unknown>;
+    action_type?: string;
+  }): Promise<import('@/types').SupportActionResponse> {
+    const res = await authedFetch('/support/actions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`createSupportAction failed: ${res.status}`);
+    return res.json();
+  },
+  async updateSupportActionStatus(
+    actionId: string,
+    body: { status: import('@/types').SupportActionStatus; review_notes?: string | null }
+  ): Promise<import('@/types').SupportActionResponse> {
+    const res = await authedFetch(`/support/actions/${encodeURIComponent(actionId)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`updateSupportActionStatus failed: ${res.status}`);
+    return res.json();
+  },
   async startSupportSyncIndexJob(opts: {
     providers?: Array<'zendesk' | 'intercom'>;
     limit?: number;
