@@ -2,12 +2,16 @@ import { useMemo, useState, type FormEvent } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  Bug,
   ClipboardCheck,
   CheckCircle2,
   Database,
   ExternalLink,
+  FileText,
   LifeBuoy,
   Loader2,
+  MessageSquare,
   PlayCircle,
   RefreshCw,
   Search,
@@ -59,11 +63,19 @@ const JOB_STATUS_TONE: Record<string, string> = {
 };
 
 const PIPELINE = [
-  { label: 'Connect', body: 'Zendesk and Intercom connectors' },
-  { label: 'Normalize', body: 'Canonical ticket model' },
-  { label: 'Index', body: 'Tenant-scoped vector memory' },
-  { label: 'Resolve', body: 'Answer from prior resolutions' },
+  { label: 'Ask', body: 'Describe the recurring support issue' },
+  { label: 'Match', body: 'Find repeat clusters and solved cases' },
+  { label: 'Build', body: 'Generate a cited resolution workflow' },
+  { label: 'Review', body: 'Draft macro, KB, or product follow-up' },
 ] as const;
+
+const ASK_SUGGESTIONS = [
+  'Why do export timeout tickets keep happening?',
+  'How have we resolved Slack integration failures?',
+  'Which billing preview issues could be deflected?',
+] as const;
+
+const EMPTY_REPEAT_INSIGHTS: SupportRepeatTicketInsight[] = [];
 
 export function SupportResolutionPage() {
   const [provider, setProvider] = useState<ProviderFilter>('all');
@@ -89,12 +101,16 @@ export function SupportResolutionPage() {
 
   const tickets = ticketsQuery.data?.tickets ?? [];
   const jobs = jobsQuery.data?.jobs ?? [];
-  const repeatInsights = repeatInsightsQuery.data?.insights ?? [];
+  const repeatInsights = repeatInsightsQuery.data?.insights ?? EMPTY_REPEAT_INSIGHTS;
   const repeatSummary = repeatInsightsQuery.data?.summary;
   const activeJob = jobs.find((job) => job.status === 'queued' || job.status === 'running');
   const indexSummary = indexMutation.data?.index ?? seedMutation.data?.index ?? undefined;
   const resultCount = searchMutation.data?.results.length ?? 0;
   const syncProviders: Array<'zendesk' | 'intercom'> = providerParam ? [providerParam] : ['zendesk', 'intercom'];
+  const matchedInsight = useMemo(
+    () => findBestRepeatInsight(query, repeatInsights),
+    [query, repeatInsights]
+  );
 
   const runIndex = () => {
     indexMutation.mutate(
@@ -225,6 +241,21 @@ export function SupportResolutionPage() {
     );
   };
 
+  const runGuidedAsk = () => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    searchResolutionMemory(q);
+    runResolve();
+    if (matchedInsight) {
+      buildWorkflow(matchedInsight);
+    } else {
+      toast({
+        title: 'No repeat cluster matched yet',
+        description: 'Load demo data or refresh repeat insights, then build the workflow from a cluster.',
+      });
+    }
+  };
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 md:py-12">
@@ -295,6 +326,23 @@ export function SupportResolutionPage() {
             detail="Every vector query is tenant-filtered"
           />
         </div>
+
+        <AskToResolutionPanel
+          query={query}
+          suggestions={ASK_SUGGESTIONS}
+          matchedInsight={matchedInsight}
+          isResolving={resolveMutation.isPending}
+          isSearching={searchMutation.isPending}
+          isBuildingWorkflow={workflowMutation.isPending}
+          onQueryChange={setQuery}
+          onSubmitSearch={submitSearch}
+          onGuidedAsk={runGuidedAsk}
+          onResolve={runResolve}
+          onSuggestion={(suggestion) => {
+            setQuery(suggestion);
+            searchResolutionMemory(suggestion);
+          }}
+        />
 
         <section className="glass rounded-2xl p-4 md:p-5 mb-6">
           <div className="grid md:grid-cols-4 gap-3">
@@ -426,6 +474,128 @@ export function SupportResolutionPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AskToResolutionPanel({
+  query,
+  suggestions,
+  matchedInsight,
+  isResolving,
+  isSearching,
+  isBuildingWorkflow,
+  onQueryChange,
+  onSubmitSearch,
+  onGuidedAsk,
+  onResolve,
+  onSuggestion,
+}: {
+  query: string;
+  suggestions: readonly string[];
+  matchedInsight: SupportRepeatTicketInsight | undefined;
+  isResolving: boolean;
+  isSearching: boolean;
+  isBuildingWorkflow: boolean;
+  onQueryChange: (value: string) => void;
+  onSubmitSearch: (event: FormEvent) => void;
+  onGuidedAsk: () => void;
+  onResolve: () => void;
+  onSuggestion: (suggestion: string) => void;
+}) {
+  const busy = isResolving || isSearching || isBuildingWorkflow;
+
+  return (
+    <section className="glass-strong rounded-2xl p-4 md:p-6 mb-6 border border-accent/20">
+      <div className="grid lg:grid-cols-[1.3fr_0.7fr] gap-5 items-start">
+        <div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-accent mb-3">
+            <Sparkles className="w-4 h-4" />
+            Ask Compass
+          </div>
+          <h2 className="text-xl md:text-2xl font-semibold tracking-tight">
+            Tell Compass the support issue. It builds the resolution path.
+          </h2>
+          <p className="text-sm text-fg-secondary mt-2 max-w-2xl leading-relaxed">
+            Start with the customer pain, then move from repeat cluster to solved cases, playbook,
+            KB gap, and deflection estimate in one guided pass.
+          </p>
+
+          <form onSubmit={onSubmitSearch} className="mt-5">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                placeholder="Ask about a recurring support issue..."
+                className="glass border h-11 text-base"
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={onGuidedAsk}
+                  disabled={busy || query.trim().length < 2}
+                  className="shrink-0"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                  Build path
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={onResolve}
+                  disabled={isResolving || query.trim().length < 2}
+                  className="shrink-0"
+                >
+                  {isResolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+                  Answer
+                </Button>
+              </div>
+            </div>
+          </form>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => onSuggestion(suggestion)}
+                className="text-left text-xs px-3 py-2 rounded-md border border-border bg-surface-muted/50 text-fg-secondary hover:text-fg hover:border-border-strong transition"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
+          <div className="text-xs uppercase tracking-wider text-fg-muted">Matched repeat cluster</div>
+          {matchedInsight ? (
+            <div className="mt-3">
+              <h3 className="font-semibold">{matchedInsight.title}</h3>
+              <p className="text-sm text-fg-secondary mt-2 leading-relaxed">
+                {matchedInsight.count} related tickets, with {matchedInsight.potential_deflection_count} likely
+                deflection candidates in this sample.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {matchedInsight.tags.slice(0, 4).map((tag) => (
+                  <span key={tag} className="text-[11px] px-1.5 py-0.5 rounded bg-bg/40 text-fg-muted border border-border/50">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-fg-secondary mt-3 leading-relaxed">
+              Load demo data or refresh repeat insights to auto-match the ask to a support cluster.
+            </p>
+          )}
+          <div className="mt-4 rounded-lg border border-knowledge/20 bg-knowledge/10 p-3 text-xs text-fg-secondary">
+            Review required. Compass drafts the path and keeps citations visible before any customer-facing action.
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -582,6 +752,8 @@ function WorkflowPanel({
                 </ul>
               </article>
 
+              <ActionDrafts workflow={workflow} />
+
               <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
                 <div className="text-xs uppercase tracking-wider text-fg-muted">Evidence and guardrails</div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -616,6 +788,59 @@ function WorkflowPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function ActionDrafts({ workflow }: { workflow: SupportResolutionWorkflow }) {
+  const drafts = [
+    {
+      icon: MessageSquare,
+      label: 'Draft macro',
+      title: workflow.playbook.title,
+      body: workflow.playbook.customer_response_draft,
+    },
+    {
+      icon: FileText,
+      label: 'Draft KB update',
+      title: workflow.knowledge_gap.article_title,
+      body: workflow.knowledge_gap.recommendation,
+    },
+    {
+      icon: Bug,
+      label: 'Create product bug',
+      title: workflow.cluster.title,
+      body: `Attach ${workflow.cluster.count} related tickets and the playbook evidence so product can confirm the root cause.`,
+    },
+    {
+      icon: CheckCircle2,
+      label: 'Mark for review',
+      title: formatLabel(workflow.playbook.verification_status),
+      body: workflow.playbook.guardrails[0] || 'Keep the generated output in human review before publishing.',
+    },
+  ];
+
+  return (
+    <article className="rounded-xl border border-accent/25 bg-accent/5 p-4">
+      <div className="text-xs uppercase tracking-wider text-fg-muted">Read-only action drafts</div>
+      <p className="text-xs text-fg-secondary mt-2">
+        Demo actions are generated locally; Zendesk, Jira, and KB write-back stay disabled.
+      </p>
+      <div className="mt-3 space-y-2">
+        {drafts.map((draft) => {
+          const Icon = draft.icon;
+          return (
+            <div key={draft.label} className="rounded-lg border border-border/70 bg-bg/30 p-3">
+              <div className="flex items-center gap-2">
+                <Icon className="w-3.5 h-3.5 text-accent" />
+                <div className="text-xs font-medium">{draft.label}</div>
+              </div>
+              <div className="text-sm font-semibold mt-2">{draft.title}</div>
+              <p className="text-xs text-fg-secondary mt-1 leading-relaxed line-clamp-3">{draft.body}</p>
+            </div>
+          );
+        })}
+      </div>
+    </article>
   );
 }
 
@@ -926,6 +1151,53 @@ function formatJobTime(job: SupportJob) {
   if (job.finished_at) return `Finished ${formatRelative(job.finished_at)}`;
   if (job.started_at) return `Started ${formatRelative(job.started_at)}`;
   return `Queued ${formatRelative(job.created_at)}`;
+}
+
+function findBestRepeatInsight(query: string, insights: SupportRepeatTicketInsight[]) {
+  const queryTerms = meaningfulTerms(query);
+  if (queryTerms.length === 0) return insights[0];
+
+  let best: { insight: SupportRepeatTicketInsight; score: number } | undefined;
+  for (const insight of insights) {
+    const haystack = [
+      insight.title,
+      insight.related_query,
+      insight.recommended_action,
+      ...insight.tags,
+      ...insight.signals,
+      ...insight.sample_tickets.map((ticket) => ticket.subject),
+    ]
+      .join(' ')
+      .toLowerCase();
+    const score = queryTerms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
+    if (!best || score > best.score) {
+      best = { insight, score };
+    }
+  }
+
+  return best && best.score > 0 ? best.insight : insights[0];
+}
+
+function meaningfulTerms(value: string) {
+  const stopWords = new Set([
+    'about',
+    'again',
+    'could',
+    'does',
+    'have',
+    'happen',
+    'happening',
+    'resolved',
+    'support',
+    'ticket',
+    'tickets',
+    'which',
+    'why',
+  ]);
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((term) => term.length > 2 && !stopWords.has(term));
 }
 
 function FilterBar({
