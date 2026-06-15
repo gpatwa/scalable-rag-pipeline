@@ -20,6 +20,7 @@ import type {
   SupportCatalogResponse,
   SupportConnectionsResponse,
   SupportActionResponse,
+  SupportActionResetResponse,
   SupportActionsResponse,
   SupportActionStatus,
   SupportJobResponse,
@@ -311,6 +312,16 @@ export function useCreateSupportAction() {
     }
   >({
     mutationFn: (body) => api.createSupportAction(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.supportActions });
+    },
+  });
+}
+
+export function useResetSupportActions() {
+  const qc = useQueryClient();
+  return useMutation<SupportActionResetResponse, Error, void>({
+    mutationFn: () => api.resetSupportActions(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.supportActions });
     },

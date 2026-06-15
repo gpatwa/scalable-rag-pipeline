@@ -29,6 +29,7 @@ import {
   useBuildSupportResolutionWorkflow,
   useCreateSupportAction,
   useExecuteSupportAction,
+  useResetSupportActions,
   useResolveSupportIssue,
   useSearchSupportIndex,
   useSeedSupportDemo,
@@ -92,11 +93,31 @@ const ASK_SUGGESTIONS = [
 ] as const;
 
 const EMPTY_REPEAT_INSIGHTS: SupportRepeatTicketInsight[] = [];
+const DEMO_QUESTION = 'How have we resolved export timeout issues?';
+const DEMO_STEPS = [
+  { id: 'reset', label: 'Reset' },
+  { id: 'seed', label: 'Seed' },
+  { id: 'ask', label: 'Ask' },
+  { id: 'build', label: 'Build' },
+  { id: 'queue', label: 'Queue' },
+  { id: 'review', label: 'Review' },
+  { id: 'approve', label: 'Approve' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'execute', label: 'Execute' },
+] as const;
+
+type DemoStepId = (typeof DEMO_STEPS)[number]['id'];
+type DemoRunState = {
+  active: boolean;
+  step: DemoStepId | 'idle' | 'complete' | 'error';
+  error?: string;
+};
 
 export function SupportResolutionPage() {
   const [provider, setProvider] = useState<ProviderFilter>('all');
   const [status, setStatus] = useState('');
-  const [query, setQuery] = useState('How have we resolved export timeout issues?');
+  const [query, setQuery] = useState(DEMO_QUESTION);
+  const [demoRun, setDemoRun] = useState<DemoRunState>({ active: false, step: 'idle' });
   const providerParam = provider === 'all' ? undefined : provider;
   const statusParam = status.trim() || undefined;
   const ticketsQuery = useSupportTickets({ provider: providerParam, status: statusParam, limit: 25 });
@@ -113,6 +134,7 @@ export function SupportResolutionPage() {
   const resolveMutation = useResolveSupportIssue();
   const workflowMutation = useBuildSupportResolutionWorkflow();
   const createActionMutation = useCreateSupportAction();
+  const resetActionsMutation = useResetSupportActions();
   const updateActionStatusMutation = useUpdateSupportActionStatus();
   const executeActionMutation = useExecuteSupportAction();
   const seedMutation = useSeedSupportDemo();
@@ -277,6 +299,106 @@ export function SupportResolutionPage() {
     }
   };
 
+  const resetActionQueue = () => {
+    resetActionsMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        setDemoRun({ active: false, step: 'idle' });
+        void actionsQuery.refetch();
+        toast({
+          title: 'Demo actions reset',
+          description: `${data.deleted_count} queued action${data.deleted_count === 1 ? '' : 's'} cleared. Ticket memory is unchanged.`,
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: 'Could not reset demo actions',
+          description: err.message,
+          variant: 'destructive',
+        }),
+    });
+  };
+
+  const startGuidedDemo = async () => {
+    if (demoRun.active) return;
+
+    const setStep = (step: DemoStepId) => setDemoRun({ active: true, step });
+    setProvider('all');
+    setStatus('');
+    setQuery(DEMO_QUESTION);
+
+    try {
+      setStep('reset');
+      await resetActionsMutation.mutateAsync();
+
+      setStep('seed');
+      await seedMutation.mutateAsync();
+      await Promise.all([ticketsQuery.refetch(), jobsQuery.refetch()]);
+      const refreshedInsights = await repeatInsightsQuery.refetch();
+      const insights = refreshedInsights.data?.insights ?? repeatInsights;
+      const insight = findBestRepeatInsight(DEMO_QUESTION, insights);
+      if (!insight) {
+        throw new Error('Export timeout repeat cluster was not available after loading demo data.');
+      }
+
+      setStep('ask');
+      await Promise.all([
+        searchMutation.mutateAsync({ q: DEMO_QUESTION, limit: 8 }),
+        resolveMutation.mutateAsync({ question: DEMO_QUESTION, limit: 6 }),
+      ]);
+
+      setStep('build');
+      const workflowResponse = await workflowMutation.mutateAsync({
+        cluster_id: insight.id,
+        limit: 200,
+        min_count: 2,
+      });
+      const commandText = buildAgentCommand(workflowResponse.workflow);
+
+      setStep('queue');
+      const created = await createActionMutation.mutateAsync({
+        cluster_id: workflowResponse.workflow.cluster.id,
+        cluster_title: workflowResponse.workflow.cluster.title,
+        command_text: commandText,
+        workflow: JSON.parse(JSON.stringify(workflowResponse.workflow)) as Record<string, unknown>,
+      });
+      const actionId = created.action.id;
+
+      setStep('review');
+      await updateActionStatusMutation.mutateAsync({
+        actionId,
+        status: 'needs_review',
+        review_notes: 'Guided demo review: evidence and guardrails checked.',
+      });
+
+      setStep('approve');
+      await updateActionStatusMutation.mutateAsync({ actionId, status: 'approved' });
+
+      setStep('ready');
+      await updateActionStatusMutation.mutateAsync({ actionId, status: 'ready_to_execute' });
+
+      setStep('execute');
+      await executeActionMutation.mutateAsync({
+        actionId,
+        execution_notes: 'Guided local demo execution. No external system was changed.',
+      });
+      await actionsQuery.refetch();
+
+      setDemoRun({ active: false, step: 'complete' });
+      toast({
+        title: 'Guided demo complete',
+        description: 'The support action moved from historical memory to reviewed local execution.',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Guided demo failed.';
+      setDemoRun({ active: false, step: 'error', error: message });
+      toast({
+        title: 'Guided demo stopped',
+        description: message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const saveWorkflowAction = (workflow: SupportResolutionWorkflow, commandText: string) => {
     createActionMutation.mutate(
       {
@@ -412,6 +534,15 @@ export function SupportResolutionPage() {
             detail="Every vector query is tenant-filtered"
           />
         </div>
+
+        <DemoRunbookPanel
+          actionsCount={actions.length}
+          state={demoRun}
+          isStarting={demoRun.active}
+          isResetting={resetActionsMutation.isPending}
+          onStart={() => void startGuidedDemo()}
+          onReset={resetActionQueue}
+        />
 
         <AskToResolutionPanel
           query={query}
@@ -581,6 +712,101 @@ export function SupportResolutionPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function DemoRunbookPanel({
+  actionsCount,
+  state,
+  isStarting,
+  isResetting,
+  onStart,
+  onReset,
+}: {
+  actionsCount: number;
+  state: DemoRunState;
+  isStarting: boolean;
+  isResetting: boolean;
+  onStart: () => void;
+  onReset: () => void;
+}) {
+  const currentIndex = DEMO_STEPS.findIndex((step) => step.id === state.step);
+  const complete = state.step === 'complete';
+  const hasError = state.step === 'error';
+
+  return (
+    <section className="glass rounded-2xl p-4 md:p-5 mb-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2">
+            <PlayCircle className="w-4 h-4 text-accent" />
+            <h2 className="text-lg font-semibold tracking-tight">Demo runbook</h2>
+          </div>
+          <p className="text-sm text-fg-secondary mt-1">
+            Historical tickets to reviewed local execution for the export-timeout scenario.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onStart} disabled={isStarting || isResetting}>
+            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+            {isStarting ? 'Running…' : 'Start demo'}
+          </Button>
+          <Button variant="outline" onClick={onReset} disabled={isStarting || isResetting || actionsCount === 0}>
+            {isResetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Reset actions
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid sm:grid-cols-3 lg:grid-cols-9 gap-2">
+        {DEMO_STEPS.map((step, idx) => {
+          const active = state.step === step.id;
+          const done = complete || currentIndex > idx;
+          return (
+            <div
+              key={step.id}
+              className={cn(
+                'rounded-lg border px-3 py-2 min-w-0',
+                active && 'border-accent/40 bg-accent/10',
+                done && 'border-knowledge/30 bg-knowledge/10',
+                !active && !done && 'border-border bg-surface-muted/30'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    active && 'bg-accent',
+                    done && 'bg-knowledge',
+                    !active && !done && 'bg-border-strong'
+                  )}
+                />
+                <span className="text-xs font-medium truncate">{step.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className={cn(
+          'mt-3 rounded-lg border px-3 py-2 text-xs',
+          hasError
+            ? 'border-destructive/25 bg-destructive/10 text-destructive'
+            : complete
+              ? 'border-knowledge/20 bg-knowledge/10 text-fg-secondary'
+              : 'border-border bg-surface-muted/30 text-fg-secondary'
+        )}
+      >
+        {hasError
+          ? state.error
+          : complete
+            ? 'Ready for replay. The latest action is executed locally with audit evidence.'
+            : isStarting
+              ? `${formatLabel(String(state.step))} in progress.`
+              : `${formatCount(actionsCount)} queued action${actionsCount === 1 ? '' : 's'} in the local demo queue.`}
+      </div>
+    </section>
   );
 }
 

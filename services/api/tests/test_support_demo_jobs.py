@@ -393,6 +393,45 @@ class TestSupportActionQueue:
             await engine.dispose()
 
     @pytest.mark.asyncio
+    async def test_support_action_reset_clears_only_current_tenant(self, monkeypatch):
+        import app.memory.postgres as pg
+        import app.routes.support as routes
+
+        engine, Session = await _session()
+        monkeypatch.setattr(pg, "AsyncSessionLocal", Session)
+        monkeypatch.setattr(routes.audit_mgr, "log_event", AsyncMock())
+
+        try:
+            first = await routes.create_support_action(
+                routes.SupportActionCreateRequest(
+                    cluster_id="tag:export|timeout",
+                    cluster_title="Export + Timeout",
+                    command_text="/support.agent.execute\ncluster: Export + Timeout",
+                    workflow={"cluster": {"id": "tag:export|timeout"}},
+                ),
+                ctx=_ctx(),
+            )
+            second = await routes.create_support_action(
+                routes.SupportActionCreateRequest(
+                    cluster_id="tag:billing|invoice",
+                    cluster_title="Billing + Invoice",
+                    command_text="/support.agent.execute\ncluster: Billing + Invoice",
+                    workflow={"cluster": {"id": "tag:billing|invoice"}},
+                ),
+                ctx=_ctx(tenant_id="tenant-b"),
+            )
+
+            reset = await routes.reset_support_actions(ctx=_ctx())
+            tenant_a = await routes.list_support_actions(limit=20, ctx=_ctx())
+            tenant_b = await routes.list_support_actions(limit=20, ctx=_ctx(tenant_id="tenant-b"))
+
+            assert reset["deleted_count"] == 1
+            assert first["action"]["id"] not in [item["id"] for item in tenant_a["actions"]]
+            assert [item["id"] for item in tenant_b["actions"]] == [second["action"]["id"]]
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
     async def test_support_action_status_rejects_invalid_status(self, monkeypatch):
         import app.memory.postgres as pg
         import app.routes.support as routes

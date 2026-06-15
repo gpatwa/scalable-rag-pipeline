@@ -468,6 +468,10 @@ export interface SupportActionResponse {
   action: SupportAction;
 }
 
+export interface SupportActionResetResponse {
+  deleted_count: number;
+}
+
 export interface SupportJob {
   id: string;
   tenant_id: string;

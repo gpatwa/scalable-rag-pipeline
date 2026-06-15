@@ -243,6 +243,13 @@ export const api = {
     if (!res.ok) throw new Error(`listSupportActions failed: ${res.status}`);
     return res.json();
   },
+  async resetSupportActions(): Promise<import('@/types').SupportActionResetResponse> {
+    const res = await authedFetch('/support/actions', {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`resetSupportActions failed: ${res.status}`);
+    return res.json();
+  },
   async createSupportAction(body: {
     cluster_id?: string | null;
     cluster_title: string;
