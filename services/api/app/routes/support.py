@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 
 from app.audit import manager as audit_mgr
 from app.auth.tenant import TenantContext, get_tenant_context
@@ -293,6 +293,33 @@ async def list_support_actions(
         )
         actions = result.scalars().all()
     return {"actions": [_action_to_response(action).model_dump() for action in actions]}
+
+
+@router.delete("/actions", response_model=dict)
+async def reset_support_actions(
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    start = time.monotonic()
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            delete(SupportAction).where(SupportAction.tenant_id == ctx.tenant_id)
+        )
+        await session.commit()
+
+    deleted_count = int(result.rowcount or 0)
+    await _audit_action(
+        ctx,
+        "reset",
+        True,
+        start,
+        {"deleted_count": deleted_count},
+    )
+    return {"deleted_count": deleted_count}
 
 
 @router.post("/actions/{action_id}/status", response_model=dict)
