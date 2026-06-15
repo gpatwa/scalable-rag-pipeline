@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  BarChart3,
   Bot,
   ClipboardCheck,
   CheckCircle2,
@@ -10,8 +11,10 @@ import {
   Copy,
   Database,
   ExternalLink,
+  FileText,
   LifeBuoy,
   Loader2,
+  PackageCheck,
   PlayCircle,
   RefreshCw,
   Search,
@@ -23,6 +26,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/use-toast';
 import {
   useIndexSupportTickets,
@@ -92,6 +102,7 @@ const ASK_SUGGESTIONS = [
   'Which billing preview issues could be deflected?',
 ] as const;
 
+const EMPTY_SUPPORT_ACTIONS: SupportAction[] = [];
 const EMPTY_REPEAT_INSIGHTS: SupportRepeatTicketInsight[] = [];
 const DEMO_QUESTION = 'How have we resolved export timeout issues?';
 const DEMO_STEPS = [
@@ -112,12 +123,29 @@ type DemoRunState = {
   step: DemoStepId | 'idle' | 'complete' | 'error';
   error?: string;
 };
+type BuyerOutcome = {
+  headline: string;
+  summary: string;
+  deflectableTickets: number;
+  artifactCount: number;
+  macroDrafted: boolean;
+  kbDrafted: boolean;
+  followUpPrepared: boolean;
+};
+type RepeatSummary = {
+  tickets_analyzed: number;
+  total_tickets: number;
+  repeat_clusters: number;
+  repeat_ticket_count: number;
+  potential_deflection_count: number;
+};
 
 export function SupportResolutionPage() {
   const [provider, setProvider] = useState<ProviderFilter>('all');
   const [status, setStatus] = useState('');
   const [query, setQuery] = useState(DEMO_QUESTION);
   const [demoRun, setDemoRun] = useState<DemoRunState>({ active: false, step: 'idle' });
+  const [caseStudyOpen, setCaseStudyOpen] = useState(false);
   const providerParam = provider === 'all' ? undefined : provider;
   const statusParam = status.trim() || undefined;
   const ticketsQuery = useSupportTickets({ provider: providerParam, status: statusParam, limit: 25 });
@@ -143,7 +171,7 @@ export function SupportResolutionPage() {
 
   const tickets = ticketsQuery.data?.tickets ?? [];
   const jobs = jobsQuery.data?.jobs ?? [];
-  const actions = actionsQuery.data?.actions ?? [];
+  const actions = actionsQuery.data?.actions ?? EMPTY_SUPPORT_ACTIONS;
   const repeatInsights = repeatInsightsQuery.data?.insights ?? EMPTY_REPEAT_INSIGHTS;
   const repeatSummary = repeatInsightsQuery.data?.summary;
   const activeJob = jobs.find((job) => job.status === 'queued' || job.status === 'running');
@@ -153,6 +181,14 @@ export function SupportResolutionPage() {
   const matchedInsight = useMemo(
     () => findBestRepeatInsight(query, repeatInsights),
     [query, repeatInsights]
+  );
+  const latestExecutedAction = useMemo(
+    () => actions.find((action) => action.status === 'executed') ?? actions[0],
+    [actions]
+  );
+  const buyerOutcome = useMemo(
+    () => buildBuyerOutcome(latestExecutedAction, repeatSummary),
+    [latestExecutedAction, repeatSummary]
   );
 
   const runIndex = () => {
@@ -544,6 +580,12 @@ export function SupportResolutionPage() {
           onReset={resetActionQueue}
         />
 
+        <BuyerOutcomePanel
+          outcome={buyerOutcome}
+          hasExecutedAction={latestExecutedAction?.status === 'executed'}
+          onOpenCaseStudy={() => setCaseStudyOpen(true)}
+        />
+
         <AskToResolutionPanel
           query={query}
           suggestions={ASK_SUGGESTIONS}
@@ -711,6 +753,11 @@ export function SupportResolutionPage() {
           </section>
         </div>
       </div>
+      <CaseStudySheet
+        open={caseStudyOpen}
+        onOpenChange={setCaseStudyOpen}
+        outcome={buyerOutcome}
+      />
     </div>
   );
 }
@@ -806,6 +853,218 @@ function DemoRunbookPanel({
               ? `${formatLabel(String(state.step))} in progress.`
               : `${formatCount(actionsCount)} queued action${actionsCount === 1 ? '' : 's'} in the local demo queue.`}
       </div>
+    </section>
+  );
+}
+
+function BuyerOutcomePanel({
+  outcome,
+  hasExecutedAction,
+  onOpenCaseStudy,
+}: {
+  outcome: BuyerOutcome;
+  hasExecutedAction: boolean;
+  onOpenCaseStudy: () => void;
+}) {
+  return (
+    <section className="glass rounded-2xl p-4 md:p-5 mb-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-accent" />
+            <h2 className="text-lg font-semibold tracking-tight">Buyer outcome</h2>
+          </div>
+          <p className="text-sm text-fg-secondary mt-1">
+            The demo result translated into support-ops value and trust signals.
+          </p>
+        </div>
+        <Button variant="outline" onClick={onOpenCaseStudy}>
+          <FileText className="w-4 h-4" />
+          Case study
+        </Button>
+      </div>
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <OutcomeTile
+          icon={TrendingDown}
+          label="Deflection opportunity"
+          value={formatCount(outcome.deflectableTickets)}
+          detail="repeat tickets in this local sample"
+        />
+        <OutcomeTile
+          icon={PackageCheck}
+          label="Macro draft"
+          value={outcome.macroDrafted ? 'Ready' : 'Pending'}
+          detail="agent response prepared for review"
+        />
+        <OutcomeTile
+          icon={FileText}
+          label="KB update"
+          value={outcome.kbDrafted ? 'Ready' : 'Pending'}
+          detail="article gap packaged from evidence"
+        />
+        <OutcomeTile
+          icon={Bot}
+          label="Product follow-up"
+          value={outcome.followUpPrepared ? 'Ready' : 'Pending'}
+          detail="repeat evidence prepared for triage"
+        />
+        <OutcomeTile
+          icon={ShieldCheck}
+          label="External changes"
+          value="0"
+          detail={hasExecutedAction ? 'local execution only' : 'waiting for local execution'}
+        />
+      </div>
+
+      <div className="mt-4 rounded-xl border border-knowledge/20 bg-knowledge/10 p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">{outcome.headline}</div>
+            <p className="text-xs text-fg-secondary mt-1 leading-relaxed">
+              {outcome.summary}
+            </p>
+          </div>
+          <StatusBadge status={hasExecutedAction ? 'executed' : 'needs_review'} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OutcomeTile({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof Ticket;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <article className="rounded-xl border border-border/70 bg-surface-muted/30 p-4 min-w-0">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-bg/40 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 text-accent" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wider text-fg-muted truncate">{label}</div>
+          <div className="text-lg font-semibold mt-0.5 truncate">{value}</div>
+        </div>
+      </div>
+      <p className="text-xs text-fg-secondary mt-3 leading-relaxed">{detail}</p>
+    </article>
+  );
+}
+
+function CaseStudySheet({
+  open,
+  onOpenChange,
+  outcome,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  outcome: BuyerOutcome;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
+        <SheetHeader>
+          <SheetTitle>Case study: repeat support tickets</SheetTitle>
+          <SheetDescription>
+            A buyer-ready story for support teams evaluating resolution memory before automation.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="px-6 pb-6 space-y-5">
+          <section className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
+            <div className="text-xs uppercase tracking-wider text-fg-muted">Prospect profile</div>
+            <h3 className="font-semibold mt-1">B2B SaaS support team with repeat export failures</h3>
+            <p className="text-sm text-fg-secondary mt-2 leading-relaxed">
+              The team already solved similar export-timeout tickets, but the answers are buried across
+              historical cases, comments, and knowledge articles.
+            </p>
+          </section>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <CaseStudyBlock
+              label="Before Compass"
+              items={[
+                'Agents search solved tickets manually.',
+                'KB gaps are found after volume has already accumulated.',
+                'Product follow-up lacks clean repeated-issue evidence.',
+              ]}
+            />
+            <CaseStudyBlock
+              label="After Compass"
+              items={[
+                'Repeat clusters surface from historical tickets.',
+                'Prior resolutions become cited playbooks.',
+                'Human-reviewed commands create macro, KB, and follow-up artifacts.',
+              ]}
+            />
+          </div>
+
+          <section className="rounded-xl border border-accent/20 bg-accent/5 p-4">
+            <div className="text-xs uppercase tracking-wider text-fg-muted">Live demo proof</div>
+            <div className="mt-3 grid sm:grid-cols-3 gap-2">
+              <MiniStat label="Deflectable tickets" value={formatCount(outcome.deflectableTickets)} />
+              <MiniStat label="Local artifacts" value={formatCount(outcome.artifactCount)} />
+              <MiniStat label="External changes" value="0" />
+            </div>
+            <p className="text-sm text-fg-secondary mt-3 leading-relaxed">
+              {outcome.summary}
+            </p>
+          </section>
+
+          <section className="rounded-xl border border-governance/20 bg-governance/10 p-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-governance" />
+              <h3 className="font-semibold">Trust layer</h3>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {[
+                'Tenant-scoped search and action queues keep customer data isolated.',
+                'Every answer and command keeps evidence visible before action.',
+                'Approval, readiness, and local execution are recorded in the action timeline.',
+                'The demo creates local artifacts only; no helpdesk, KB, or product system is changed.',
+              ].map((item) => (
+                <li key={item} className="flex gap-2 text-sm text-fg-secondary">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-governance shrink-0" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
+            <div className="text-xs uppercase tracking-wider text-fg-muted">Close</div>
+            <p className="text-sm text-fg-secondary mt-2 leading-relaxed">
+              Compass is positioned as a support resolution operating layer: it turns messy ticket
+              history into searchable memory, prepares reviewable work, and creates the audit trail
+              needed before deeper automation.
+            </p>
+          </section>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CaseStudyBlock({ label, items }: { label: string; items: string[] }) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-surface-muted/30 p-4">
+      <h3 className="font-semibold">{label}</h3>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 text-sm text-fg-secondary">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -1503,6 +1762,37 @@ function executionResultSummary(result: Record<string, unknown> | null) {
   };
 }
 
+function buildBuyerOutcome(
+  action: SupportAction | undefined,
+  summary: RepeatSummary | undefined
+): BuyerOutcome {
+  const workflow = isRecord(action?.workflow) ? action.workflow : {};
+  const deflection = isRecord(workflow.deflection_estimate) ? workflow.deflection_estimate : {};
+  const execution = isRecord(action?.execution_result) ? action.execution_result : {};
+  const rawArtifacts = Array.isArray(execution.artifacts) ? execution.artifacts : [];
+  const artifactTypes = rawArtifacts
+    .map((artifact) => (isRecord(artifact) && typeof artifact.type === 'string' ? artifact.type : null))
+    .filter((type): type is string => Boolean(type));
+  const deflectableTickets = numberFromUnknown(deflection.potential_ticket_count)
+    ?? summary?.potential_deflection_count
+    ?? 0;
+  const executed = action?.status === 'executed';
+
+  return {
+    headline: executed
+      ? 'Reviewed support work is ready without touching external systems.'
+      : 'Run the demo to produce the buyer-facing outcome proof.',
+    summary: executed
+      ? `${formatCount(deflectableTickets)} repeat ticket${deflectableTickets === 1 ? '' : 's'} can be targeted with a reviewed macro, KB update, and product follow-up while keeping execution local.`
+      : 'The next completed run will show deflection opportunity, prepared artifacts, and the human-trust boundary for a prospect conversation.',
+    deflectableTickets,
+    artifactCount: artifactTypes.length,
+    macroDrafted: artifactTypes.includes('support_macro'),
+    kbDrafted: artifactTypes.includes('kb_update'),
+    followUpPrepared: artifactTypes.includes('product_follow_up'),
+  };
+}
+
 function workflowArray(workflow: Record<string, unknown>, key: 'citations') {
   const playbook = isRecord(workflow.playbook) ? workflow.playbook : {};
   const value = playbook[key];
@@ -1511,6 +1801,10 @@ function workflowArray(workflow: Record<string, unknown>, key: 'citations') {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function nextActionStatus(status: SupportActionStatus) {
