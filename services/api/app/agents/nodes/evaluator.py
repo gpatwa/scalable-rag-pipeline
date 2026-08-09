@@ -4,6 +4,7 @@ import logging
 from app.agents.json_utils import extract_json
 from app.agents.state import AgentState
 from app.clients.ray_llm import llm_client
+from app.learning.store import DEFAULT_TENANT_ID, experience_memory
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,23 @@ async def evaluator_node(state: AgentState) -> dict:
             "eval_score": score,
             "eval_reasoning": reasoning,
         }
+
+        # Persist the graded outcome so later runs on similar questions can
+        # learn from it. This is the write half of the across-run loop; the
+        # read half is `experience_recall_node`. Recorded before the retry
+        # rewrite below, so the stored query is the one actually answered.
+        #
+        # Failures are swallowed inside record() — learning must never break a
+        # user-facing response.
+        await experience_memory.record(
+            query=question,
+            answer=answer,
+            score=score,
+            reasoning=reasoning,
+            tenant_id=state.get("tenant_id") or DEFAULT_TENANT_ID,
+            query_embedding=state.get("query_embedding") or None,
+            metadata={"retry_count": retry_count},
+        )
 
         # If score is low and we have a better query, update it for retry
         if score <= 2 and refined_query:

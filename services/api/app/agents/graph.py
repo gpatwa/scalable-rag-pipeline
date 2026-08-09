@@ -82,7 +82,19 @@ workflow.add_node("step_advance", step_advance_node)
 workflow.add_node("data_analytics", data_analytics_node)
 
 # 2. Define Edges
-workflow.set_entry_point("planner")
+# Experience recall runs once, ahead of the planner, when enabled. Wiring it as
+# the entry point (rather than just before the responder) means the ReAct loop
+# `tool_node -> planner` and the multi-step `step_advance -> planner` edges do
+# not re-trigger it: recall is per-request, not per-hop. Uses the same
+# conditional-wiring idiom as CONTEXT_LAYERS_ENABLED below, so with the feature
+# off the graph is identical to before.
+if settings.EXPERIENCE_MEMORY_ENABLED:
+    from app.learning.recall import experience_recall_node
+    workflow.add_node("experience_recall", experience_recall_node)
+    workflow.set_entry_point("experience_recall")
+    workflow.add_edge("experience_recall", "planner")
+else:
+    workflow.set_entry_point("planner")
 
 # Conditional routing after planner: retrieve / direct_answer / tool_use
 _planner_edges = {

@@ -12,6 +12,8 @@ from app.agents.nodes.retriever import set_clients as set_retriever_clients
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.clients.graphdb.factory import create_graphdb_client
+from app.learning.store import EXPERIENCE_COLLECTION
+from app.learning.store import set_vectordb_client as set_experience_vectordb
 from app.clients.ray_embed import embed_client
 from app.clients.ray_llm import llm_client
 from app.clients.reranker.factory import create_reranker_client
@@ -167,6 +169,19 @@ async def lifespan(app: FastAPI):
         storage=storage_client, gemini_embed=gemini_embed_client,
     )
     set_semantic_vectordb(vectordb_client)
+
+    # Experience memory (across-run self-improvement). Injection only — the
+    # `experience_memory` collection is provisioned by scripts/init_*.py
+    # alongside rag_collection and semantic_cache, so it inherits whatever
+    # embedding dimension those detect rather than hard-coding one here.
+    if settings.EXPERIENCE_MEMORY_ENABLED:
+        set_experience_vectordb(vectordb_client)
+        logger.info(
+            f"Experience memory enabled: collection={EXPERIENCE_COLLECTION}, "
+            f"top_k={settings.EXPERIENCE_MEMORY_TOP_K}, "
+            f"threshold={settings.EXPERIENCE_MEMORY_THRESHOLD}"
+        )
+
     set_health_clients(vectordb_client, graphdb_client)
     set_support_index_clients(vectordb_client, embed_client)
     set_support_resolver_clients(llm_client)

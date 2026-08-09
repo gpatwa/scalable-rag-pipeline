@@ -20,6 +20,7 @@ client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
 collections_to_create = [
     settings.QDRANT_COLLECTION,  # "rag_collection"
     "semantic_cache",
+    "experience_memory",  # across-run self-improvement (app/learning/store.py)
 ]
 
 for name in collections_to_create:

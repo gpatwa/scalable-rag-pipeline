@@ -289,6 +289,25 @@ class Settings(BaseSettings):
     EVALUATOR_ENABLED: bool = True
     EVALUATOR_SKIP_WITH_CONTEXT: bool = True
 
+    # -----------------------------------------------------------------
+    # Experience Memory (across-run self-improvement)
+    # -----------------------------------------------------------------
+    # Persists evaluator-graded outcomes and recalls them on later, similar
+    # queries so the system improves as evidence accumulates. Requires
+    # EVALUATOR_ENABLED — with no grader there is no signal to learn from.
+    EXPERIENCE_MEMORY_ENABLED: bool = True
+
+    # Recall threshold is looser than SEMANTIC_CACHE_THRESHOLD by design: the
+    # cache must be near-certain two questions are equivalent before reusing an
+    # answer, whereas a merely related prior run is still useful guidance.
+    EXPERIENCE_MEMORY_THRESHOLD: float = 0.75
+    EXPERIENCE_MEMORY_TOP_K: int = 2
+
+    # Score bands. The middle (3 = "acceptable but unremarkable") is stored as
+    # neither — recalling it as an exemplar would teach mediocrity.
+    EXPERIENCE_MEMORY_EXEMPLAR_MIN_SCORE: int = 4
+    EXPERIENCE_MEMORY_ANTIPATTERN_MAX_SCORE: int = 2
+
     # Planner: cache intent classification in Redis to skip LLM call on repeats
     PLANNER_CACHE_ENABLED: bool = True
     PLANNER_CACHE_TTL: int = 3600  # seconds

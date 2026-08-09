@@ -76,7 +76,7 @@ def init_qdrant(host: str, port: int, embed_endpoint: str = "", embed_model: str
 
     existing = {c.name for c in client.get_collections().collections}
 
-    for name in ["rag_collection", "semantic_cache"]:
+    for name in ["rag_collection", "semantic_cache", "experience_memory"]:
         if name in existing:
             info = client.get_collection(name)
             existing_dim = info.config.params.vectors.size
