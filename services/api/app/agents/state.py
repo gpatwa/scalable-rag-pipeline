@@ -45,6 +45,16 @@ class AgentState(TypedDict):
     # Long-term memory — user preferences/facts from previous sessions
     user_memories: List[str]  # loaded at session start
 
+    # Experience memory — graded outcomes from *previous runs* on similar
+    # questions, recalled by embedding similarity. This is what closes the
+    # self-improvement loop across requests: eval_score/retry_count above only
+    # correct the current run and reset when it ends.
+    exemplars: List[dict]     # [{"query","answer","score","similarity"}] — rated highly
+    antipatterns: List[dict]  # [{"query","reasoning","score","similarity"}] — rated poorly
+
+    # Tenant scope for experience recall/record (falls back to "default")
+    tenant_id: str
+
     # Pre-computed query embedding from semantic cache check (avoids duplicate embed call)
     query_embedding: List[float]
 

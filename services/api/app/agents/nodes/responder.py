@@ -5,6 +5,7 @@ from typing import Any
 from app.agents.state import AgentState
 from app.clients.ray_llm import llm_client
 from app.config import settings
+from app.learning.recall import build_experience_prompt_block
 from app.tools.web_search import web_search_tool
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,13 @@ async def build_response_messages(state: AgentState) -> list[dict[str, Any]]:
     user_memories = state.get("user_memories", [])
     if user_memories:
         context_str += "\n\nUser Preferences/Facts:\n" + "\n".join(user_memories)
+
+    # Include experience recalled from previous graded runs on similar
+    # questions. This is the payload of the across-run improvement loop: the
+    # answer differs because earlier answers were graded and remembered.
+    experience_block = build_experience_prompt_block(state)
+    if experience_block:
+        context_str += f"\n\n{experience_block}"
 
     # Fallback: if no context from retrieval or tools, try web search
     if not context_str.strip() and not image_docs:

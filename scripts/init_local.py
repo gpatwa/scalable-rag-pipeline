@@ -150,7 +150,7 @@ def init_qdrant():
     client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
     existing = [c.name for c in client.get_collections().collections]
 
-    for name in [settings.QDRANT_COLLECTION, "semantic_cache"]:
+    for name in [settings.QDRANT_COLLECTION, "semantic_cache", "experience_memory"]:
         if name in existing:
             # Check if existing collection has matching dimensions
             info = client.get_collection(name)

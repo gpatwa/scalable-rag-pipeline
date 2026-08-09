@@ -19,6 +19,8 @@ from app.clients.secrets.factory import create_secrets_client
 from app.clients.storage.factory import create_storage_client
 from app.clients.vectordb.factory import create_vectordb_client
 from app.config import settings
+from app.learning.store import EXPERIENCE_COLLECTION
+from app.learning.store import set_vectordb_client as set_experience_vectordb
 from app.routes import audit as audit_routes
 from app.routes import auth, chat, context, documents, health, home, privacy, system, upload
 from app.routes import feedback as feedback_routes
@@ -167,6 +169,19 @@ async def lifespan(app: FastAPI):
         storage=storage_client, gemini_embed=gemini_embed_client,
     )
     set_semantic_vectordb(vectordb_client)
+
+    # Experience memory (across-run self-improvement). Injection only — the
+    # `experience_memory` collection is provisioned by scripts/init_*.py
+    # alongside rag_collection and semantic_cache, so it inherits whatever
+    # embedding dimension those detect rather than hard-coding one here.
+    if settings.EXPERIENCE_MEMORY_ENABLED:
+        set_experience_vectordb(vectordb_client)
+        logger.info(
+            f"Experience memory enabled: collection={EXPERIENCE_COLLECTION}, "
+            f"top_k={settings.EXPERIENCE_MEMORY_TOP_K}, "
+            f"threshold={settings.EXPERIENCE_MEMORY_THRESHOLD}"
+        )
+
     set_health_clients(vectordb_client, graphdb_client)
     set_support_index_clients(vectordb_client, embed_client)
     set_support_resolver_clients(llm_client)
