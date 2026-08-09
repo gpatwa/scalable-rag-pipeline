@@ -12,8 +12,6 @@ from app.agents.nodes.retriever import set_clients as set_retriever_clients
 from app.cache.redis import redis_client
 from app.cache.semantic import set_vectordb_client as set_semantic_vectordb
 from app.clients.graphdb.factory import create_graphdb_client
-from app.learning.store import EXPERIENCE_COLLECTION
-from app.learning.store import set_vectordb_client as set_experience_vectordb
 from app.clients.ray_embed import embed_client
 from app.clients.ray_llm import llm_client
 from app.clients.reranker.factory import create_reranker_client
