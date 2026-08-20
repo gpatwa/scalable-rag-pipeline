@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     ENV: str = "dev"
     ANALYTICS_DB_URL: str | None = None
+    ANALYTICS_CONTROL_DB_URL: str | None = None
     DATABASE_URL: str | None = None
     ANALYTICS_QUERY_TIMEOUT: int = 10
     ANALYTICS_MAX_ROWS: int = 1_000
@@ -29,6 +30,11 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str | None:
         return self.ANALYTICS_DB_URL or self.DATABASE_URL
+
+    @property
+    def control_database_url(self) -> str | None:
+        """Return the analytics-owned control-store URL, never a warehouse URL."""
+        return self.ANALYTICS_CONTROL_DB_URL
 
     @property
     def llm_api_key(self) -> str | None:

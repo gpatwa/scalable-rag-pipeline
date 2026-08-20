@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
 class AnalyticsOutcomeBase(BaseModel):
@@ -31,24 +31,49 @@ class AnalyticsFilterEvidence(BaseModel):
     value: str | int | float | bool | None = None
 
 
+class AnalyticsProvenance(BaseModel):
+    """A versioned context asset cited by an answer without exposing raw data."""
+
+    asset_id: str = Field(min_length=1, max_length=255)
+    asset_type: Literal["dataset", "metric", "dimension", "semantic_contract", "catalog"]
+    version: str | None = Field(default=None, max_length=255)
+    retrieved_at: datetime | None = None
+
+
+class AnalyticsPolicyDecision(BaseModel):
+    decision_id: str = Field(min_length=1, max_length=255)
+    effect: Literal["allow", "deny", "review"]
+    policy_version: str | None = Field(default=None, max_length=255)
+    enforced_filter_ids: list[str] = Field(default_factory=list)
+
+
+class AnalyticsReviewReference(BaseModel):
+    review_id: str = Field(min_length=1, max_length=255)
+    state: Literal["pending", "approved", "rejected", "expired"]
+
+
 class AnalyticsAnswerEvidence(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     semantic_contract_version: str | None = Field(default=None, max_length=255)
     metric_ids: list[str] = Field(default_factory=list)
     dimension_ids: list[str] = Field(default_factory=list)
     source_asset_ids: list[str] = Field(default_factory=list)
+    provenance: list[AnalyticsProvenance] = Field(default_factory=list)
     filters: list[AnalyticsFilterEvidence] = Field(default_factory=list)
     generated_sql: str | None = None
     result_fingerprint: str | None = Field(default=None, max_length=255)
     data_freshness_at: datetime | None = None
     model_version: str | None = Field(default=None, max_length=255)
     prompt_version: str | None = Field(default=None, max_length=255)
-    policy_decision_id: str | None = Field(default=None, max_length=255)
+    policy_decision: AnalyticsPolicyDecision | None = None
 
 
 class AnalyticsAnswerOutcome(AnalyticsOutcomeBase):
     outcome: Literal["answer"] = "answer"
     answer: str = Field(min_length=1)
     evidence: AnalyticsAnswerEvidence = Field(default_factory=AnalyticsAnswerEvidence)
+    review: AnalyticsReviewReference | None = None
 
 
 class AnalyticsClarificationChoice(BaseModel):

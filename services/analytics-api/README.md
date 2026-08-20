@@ -25,6 +25,24 @@ exist.
 {"outcome":"failed","query_id":"q-5","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","error_code":"query_timeout","message":"The warehouse did not respond in time.","retryable":true}
 ```
 
+V2 evidence can cite versioned metadata assets, filters, generated SQL, result
+fingerprints, freshness, model and prompt versions, and a policy decision. It
+intentionally excludes chain-of-thought, credentials, and raw source data. The
+remaining ADR questions are evidence retention, result-fingerprint format, and
+the authority that records reviewer identity.
+
+## Analytics Control Store
+
+Analytics owns a separate control-store schema for versioned query outcomes and
+public evidence. Set `ANALYTICS_CONTROL_DB_URL`; never point it at the customer
+warehouse configured through `ANALYTICS_DB_URL`.
+
+```bash
+cd services/analytics-api
+ANALYTICS_CONTROL_DB_URL=sqlite:///analytics-control.db alembic upgrade head
+ANALYTICS_CONTROL_DB_URL=sqlite:///analytics-control.db alembic downgrade base
+```
+
 ## Local Development
 
 ```bash

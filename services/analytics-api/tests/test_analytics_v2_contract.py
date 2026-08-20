@@ -48,6 +48,38 @@ def test_v2_evidence_defaults_are_not_shared():
     assert second.root.evidence.metric_ids == []
 
 
+def test_v2_answer_evidence_carries_provenance_policy_and_review_reference():
+    response = AnalyticsV2Response.model_validate(
+        {
+            **BASE,
+            "outcome": "answer",
+            "answer": "BRL 370.00",
+            "assumptions": ["Delivered orders only"],
+            "confidence": 0.92,
+            "review": {"review_id": "review-1", "state": "approved"},
+            "evidence": {
+                "provenance": [
+                    {
+                        "asset_id": "metric.revenue",
+                        "asset_type": "metric",
+                        "version": "2026-08-20",
+                    }
+                ],
+                "policy_decision": {
+                    "decision_id": "policy-1",
+                    "effect": "allow",
+                    "policy_version": "v1",
+                    "enforced_filter_ids": ["tenant_scope"],
+                },
+            },
+        }
+    )
+
+    assert response.root.evidence.provenance[0].asset_id == "metric.revenue"
+    assert response.root.evidence.policy_decision.effect == "allow"
+    assert response.root.review.state == "approved"
+
+
 def test_v2_schema_has_an_outcome_discriminator():
     schema = AnalyticsV2Response.model_json_schema()
 
