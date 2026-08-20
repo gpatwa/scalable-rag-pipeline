@@ -4,14 +4,14 @@ Audited against the current branch after the local verification run:
 
 ```text
 ruff check packages/platform_contracts services/analytics-api/app services/analytics-api/tests
-157 passed
+160 passed
 ```
 
 ## Local Evidence Complete
 
-EA-014 to EA-017, EA-020 to EA-028, EA-030 to EA-036, EA-040, EA-043,
-EA-044, EA-045, EA-046, EA-050, EA-053, EA-054, EA-058, EA-060, EA-063 to
-EA-067, and the reusable artifacts for EA-070/071/077 have executable local
+EA-014 to EA-017, EA-020 to EA-028, EA-030 to EA-036, EA-040 to EA-046,
+EA-050, EA-053 to EA-058, EA-060 to EA-067, and the reusable artifacts for
+EA-070/071/077 have executable local
 contracts and focused tests. Their evidence is distributed across the
 analytics service tests, platform contracts, compiler, metadata, security,
 runtime, governance, and AI-operations packages.
@@ -26,8 +26,12 @@ runtime, governance, and AI-operations packages.
   PrivateLink/Private Endpoint/VPN tests remain external.
 - EA-055 to EA-057: bounded runtime primitives exist; SLO burn-in, alert
   runbooks, backup/restore, HA, and rolling-upgrade drills remain external.
-- EA-061/062: generic deterministic evaluation exists; customer golden cases
-  and adversarial suites require sanitized customer questions and approval.
+- EA-061/062: versioned JSON golden suites, stable result fingerprints, and
+  ambiguity/security adversarial categories exist; customer cases require
+  sanitized customer questions and approval.
+- EA-055 to EA-057: SLO, alert, backup, retention, and drill contracts plus a
+  runbook exist; production burn-in and restore/HA/rollback drills remain
+  external.
 - EA-072 to EA-076: pilot checklist exists; security counsel, SBOM signing,
   independent penetration test, incident tabletop, DPA, residency, and
   retention approvals remain external.
