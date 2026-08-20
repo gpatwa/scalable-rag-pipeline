@@ -208,6 +208,13 @@ class SemanticContract(BaseModel):
         return self
 
 
+class SemanticRegistryDocument(BaseModel):
+    """A Git-tracked semantic contract with its registry lifecycle state."""
+
+    lifecycle: Literal["draft", "certified", "deprecated"]
+    contract: SemanticContract
+
+
 def _unique_ids(kind: str, values: list[BaseModel]) -> set[str]:
     ids = [value.id for value in values]
     if len(ids) != len(set(ids)):

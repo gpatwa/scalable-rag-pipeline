@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +15,9 @@ class Settings(BaseSettings):
     ENV: str = "dev"
     ANALYTICS_DB_URL: str | None = None
     ANALYTICS_CONTROL_DB_URL: str | None = None
+    ANALYTICS_SEMANTIC_REGISTRY_PATH: str = str(
+        Path(__file__).resolve().parent.parent / "semantic_registry"
+    )
     DATABASE_URL: str | None = None
     ANALYTICS_QUERY_TIMEOUT: int = 10
     ANALYTICS_MAX_ROWS: int = 1_000
@@ -35,6 +39,10 @@ class Settings(BaseSettings):
     def control_database_url(self) -> str | None:
         """Return the analytics-owned control-store URL, never a warehouse URL."""
         return self.ANALYTICS_CONTROL_DB_URL
+
+    @property
+    def semantic_registry_path(self) -> Path:
+        return Path(self.ANALYTICS_SEMANTIC_REGISTRY_PATH)
 
     @property
     def llm_api_key(self) -> str | None:
