@@ -1,3 +1,11 @@
+from packages.platform_contracts.analytics_planning import (
+    AnalyticsAmbiguity,
+    AnalyticsClarificationState,
+    AnalyticsContextCitation,
+    AnalyticsPlan,
+    AnalyticsReviewRequest,
+    SavedAnalysis,
+)
 from packages.platform_contracts.metadata import (
     MetadataAsset,
     MetadataColumn,
@@ -12,4 +20,10 @@ __all__ = [
     "MetadataQualityReport",
     "MetadataSearchResult",
     "MetadataSnapshot",
+    "AnalyticsAmbiguity",
+    "AnalyticsClarificationState",
+    "AnalyticsContextCitation",
+    "AnalyticsPlan",
+    "AnalyticsReviewRequest",
+    "SavedAnalysis",
 ]
