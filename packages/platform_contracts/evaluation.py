@@ -14,6 +14,15 @@ class EvaluationCase(BaseModel):
     expected_metric_ids: list[str] = Field(default_factory=list)
     expected_dataset_id: str | None = None
     expected_sql_fingerprint: str | None = None
+    adversarial_type: Literal["none", "ambiguity", "refusal", "security", "cost"] = "none"
+    expected_reason_code: str | None = None
+
+
+class EvaluationSuite(BaseModel):
+    suite_version: str = Field(min_length=1, max_length=255)
+    tenant_id: str = Field(min_length=1, max_length=255)
+    cases: list[EvaluationCase] = Field(min_length=1, max_length=10_000)
+    fixture_digest: str = Field(min_length=1, max_length=255)
 
 
 class EvaluationResult(BaseModel):

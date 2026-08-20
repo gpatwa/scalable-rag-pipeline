@@ -1,8 +1,27 @@
 """Evaluation graders that do not require an LLM judge."""
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
+
 from packages.platform_contracts.analytics_intent import AnalyticalIntent
-from packages.platform_contracts.evaluation import EvaluationCase, EvaluationResult, ReleaseGateReport
+from packages.platform_contracts.evaluation import EvaluationCase, EvaluationResult, EvaluationSuite, ReleaseGateReport
+
+
+def load_suite(path: str | Path) -> EvaluationSuite:
+    """Load a sanitized, versioned customer suite without evaluator code changes."""
+    payload = json.loads(Path(path).read_text())
+    suite = EvaluationSuite.model_validate(payload)
+    if any(case.tenant_id != suite.tenant_id for case in suite.cases):
+        raise ValueError("evaluation case tenant does not match suite tenant")
+    return suite
+
+
+def fingerprint_rows(rows: list[dict]) -> str:
+    """Create a stable result fingerprint without storing raw result data."""
+    canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def evaluate_case(case: EvaluationCase, *, outcome: str, intent: AnalyticalIntent | None = None, sql_fingerprint: str | None = None) -> EvaluationResult:

@@ -1,5 +1,5 @@
 """EA-060 to EA-065 deterministic evaluation and release gate tests."""
-from app.evaluation import evaluate_case, release_gate
+from app.evaluation import evaluate_case, fingerprint_rows, load_suite, release_gate
 from packages.platform_contracts.analytics_intent import AnalyticalIntent, IntentMetric, SemanticContractReference
 from packages.platform_contracts.evaluation import EvaluationCase
 
@@ -25,3 +25,10 @@ def test_release_gate_blocks_regression():
     report = release_gate([result], "suite-1")
     assert report.blocked is True
     assert report.pass_rate == 0
+
+
+def test_customer_suite_is_versioned_and_extensible_without_code_changes():
+    suite = load_suite("tests/fixtures/evaluation/demo-suite-v1.json")
+    assert suite.suite_version == "demo-suite-v1"
+    assert {case.adversarial_type for case in suite.cases} == {"none", "ambiguity", "security"}
+    assert fingerprint_rows([{"value": 1}, {"value": 2}]) == fingerprint_rows([{"value": 1}, {"value": 2}])
