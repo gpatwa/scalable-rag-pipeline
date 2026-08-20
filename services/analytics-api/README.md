@@ -43,6 +43,14 @@ ANALYTICS_CONTROL_DB_URL=sqlite:///analytics-control.db alembic upgrade head
 ANALYTICS_CONTROL_DB_URL=sqlite:///analytics-control.db alembic downgrade base
 ```
 
+## Semantic Contracts
+
+`packages/platform_contracts/semantic.py` defines the versioned, portable
+semantic contract used by the future registry and compiler. It models datasets,
+physical fields, entities and grain, dimensions, certified metrics, approved
+joins, required filters, policy references, and owners. Contracts contain no
+warehouse SQL and reject unknown or cross-dataset references when loaded.
+
 ## Local Development
 
 ```bash
