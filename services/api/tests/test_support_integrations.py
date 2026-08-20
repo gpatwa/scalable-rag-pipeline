@@ -1,13 +1,10 @@
 # services/api/tests/test_support_integrations.py
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 def _ctx(role: str = "admin", tenant_id: str = "t1", user_id: str = "alice"):

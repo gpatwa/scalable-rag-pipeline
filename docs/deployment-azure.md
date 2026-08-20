@@ -53,7 +53,7 @@ make infra-azure
 
 | Resource | Dev/Staging | Production |
 |----------|-------------|------------|
-| AKS Cluster | v1.29, Standard LB | v1.29, Standard LB |
+| AKS Cluster | Configured by `kubernetes_version` (currently v1.34), Standard LB | Same version policy, Standard LB |
 | System Pool | Standard_B2s (1 node) | Standard_D2s_v5 (2+ nodes) |
 | App Pool | Standard_B2s_v2 (1-3 auto) | Standard_D4s_v5 (2-6 auto) |
 | PostgreSQL | Flexible Server, B_Standard_B1ms | D2s_v3, Zone Redundant HA |
@@ -140,6 +140,10 @@ make bootstrap-azure
 6. **Ray Cluster** — head node + GPU workers
 7. **NGINX Ingress** — load balancer + TLS
 8. **API** — FastAPI backend with Workload Identity
+
+AKS node pools use the native Azure Cluster Autoscaler configured in Terraform.
+Karpenter manifests in this repository are AWS/EKS-specific and are not installed on AKS.
+Qdrant and Neo4j are installed inside AKS with Azure Disk CSI-backed persistence.
 
 ---
 
@@ -269,23 +273,13 @@ curl -X POST http://localhost:8080/api/v1/context/annotations \
   -d '{"annotation_type": "glossary", "key": "ARR", "value": "Annual Recurring Revenue"}'
 ```
 
-### Data Analytics Agent
+### Analytics Product
 
-Enabled by default in staging. Load a dataset into Postgres:
-
-```bash
-# Port-forward to Postgres
-kubectl port-forward svc/postgres-service 5432:5432
-
-# Seed the Olist e-commerce dataset (or any CSV dataset)
-DATABASE_URL=postgresql://ragadmin:$DB_PASSWORD@localhost:5432/ragdb \
-  python3 scripts/seed_olist.py
-
-# Or load any CSV dataset with auto-schema discovery
-python3 scripts/seed_dataset.py data/your-data/ --name your-dataset
-```
-
-Then ask data questions in the Chat UI: "What was the revenue trend by month?"
+Analytics now has independent API and web images under
+`services/analytics-api` and `apps/analytics-web`. The current Azure Helm chart
+deploys the support API only. Add separate analytics workloads, secrets,
+ingress, and database credentials before enabling analytics in Azure; the local
+product split does not deploy or mutate Azure resources.
 
 ### Key Vault Secrets for Features
 
@@ -310,13 +304,13 @@ make deploy-api-azure   # Helm upgrade
 
 | Concern | AWS | Azure |
 |---------|-----|-------|
-| Kubernetes | EKS + Karpenter | AKS + Karpenter |
+| Kubernetes | EKS + Karpenter | AKS + native Cluster Autoscaler |
 | Database | Aurora Serverless v2 | PostgreSQL Flexible Server |
 | Cache | ElastiCache Redis | Azure Cache for Redis |
 | Storage | S3 | Blob Storage |
 | Container Registry | ECR | ACR |
 | Secrets | Secrets Manager + IRSA | Key Vault + Workload Identity |
-| GPU Autoscaling | Karpenter SPOT | Karpenter + Spot VMs |
+| GPU Autoscaling | Karpenter SPOT | Ray autoscaling on AKS node pools; GPU pool provisioning remains deployment-specific |
 | Free K8s Control Plane | No ($73/mo) | Yes (free tier) |
 
 ---

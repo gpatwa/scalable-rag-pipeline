@@ -14,14 +14,10 @@ admin guard, the test that calls a mutation as a non-admin will fail.
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────
 

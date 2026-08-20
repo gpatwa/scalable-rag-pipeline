@@ -200,9 +200,9 @@ def seed():
         pg_conn.close()
 
     print(f"\nOlist dataset loaded! {total_rows:,} total rows across {len(CSV_TABLE_MAP)} tables.")
-    print("\nTo enable the data analytics agent:")
-    print("  1. Set DATA_ANALYTICS_ENABLED=true in .env")
-    print("  2. Restart: make dev")
+    print("\nTo use the standalone analytics product:")
+    print("  1. Start the API: make dev-analytics-api")
+    print("  2. Start the web app: make dev-analytics-web")
     print("  3. Ask: 'What was the revenue trend by month?'")
 
 

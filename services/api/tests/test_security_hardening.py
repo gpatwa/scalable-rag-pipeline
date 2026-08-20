@@ -3,8 +3,6 @@
 Enterprise security tests:
 
 - PII detector + redactor (T1.7)
-- Schema column-allowlist validation (T1.8)
-- SQL safety against prompt-injection / jailbreak attempts (T2.13)
 - Audit log table presence (T1.1)
 - Iterative clarification node existence (T1.9)
 - Right-to-be-forgotten route registration (T2.11)
@@ -13,11 +11,6 @@ Enterprise security tests:
 These tests run without Postgres, Redis, or any external service —
 they exercise pure-python logic only.
 """
-import os
-
-import pytest
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "true")
 
 
 # ── PII detector + redactor (T1.7) ───────────────────────────────────
@@ -65,51 +58,6 @@ class TestPiiDetector:
 
         out, _ = redact("Revenue is up 14%.")
         assert out == "Revenue is up 14%."
-
-
-# ── SQL prompt-injection / jailbreak defenses (T2.13) ───────────────
-
-
-class TestSqlInjectionDefenses:
-    @pytest.mark.parametrize(
-        "evil_sql",
-        [
-            "DROP TABLE olist_orders",
-            "DELETE FROM olist_orders WHERE 1=1",
-            "INSERT INTO olist_orders VALUES (1)",
-            "UPDATE olist_orders SET status='hacked'",
-            "TRUNCATE TABLE olist_orders",
-            "GRANT ALL ON olist_orders TO public",
-            "ALTER TABLE olist_orders DROP COLUMN customer_id",
-            "CREATE TABLE x AS SELECT * FROM olist_orders",
-            "SELECT pg_sleep(60)",
-            "COPY olist_orders TO '/tmp/leak'",
-            "SELECT 1; DROP TABLE olist_orders",
-            "SELECT * FROM users_passwords",  # unknown table
-        ],
-    )
-    def test_rejects_malicious_sql(self, evil_sql: str):
-        from app.analytics.safety import validate_sql
-
-        ok, err = validate_sql(evil_sql)
-        assert ok is False, f"Should have rejected: {evil_sql!r} (err: {err})"
-
-    def test_unknown_column_rejected(self):
-        from app.analytics.safety import validate_sql
-
-        ok, err = validate_sql(
-            "SELECT olist_orders.password FROM olist_orders LIMIT 5"
-        )
-        assert ok is False
-        assert "olist_orders.password" in err
-
-    def test_known_qualified_column_allowed(self):
-        from app.analytics.safety import validate_sql
-
-        ok, err = validate_sql(
-            "SELECT olist_orders.order_status FROM olist_orders LIMIT 5"
-        )
-        assert ok is True, err
 
 
 # ── Audit log model (T1.1) ──────────────────────────────────────────
@@ -240,25 +188,6 @@ class TestCorsConfig:
         from app.config import settings
 
         assert hasattr(settings, "CORS_ORIGINS")
-
-
-# ── Read-only DB role (T2.10) ───────────────────────────────────────
-
-
-class TestReadOnlyRole:
-    def test_analytics_engine_uses_read_only_options(self):
-        """
-        Analytics engine must set default_transaction_read_only=on at
-        connect time so leaked DML (UPDATE/DELETE) is rejected by the DB
-        even if app-level safety somehow missed it. Defense in depth.
-        """
-        import inspect
-
-        from app.analytics import engine
-
-        src = inspect.getsource(engine)
-        assert "default_transaction_read_only=on" in src
-        assert "statement_timeout" in src
 
 
 # ── Redis tenant isolation (T2.12) ──────────────────────────────────

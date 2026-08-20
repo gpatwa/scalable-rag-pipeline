@@ -3,7 +3,7 @@
 Audit log table. One row per ask/answer turn or admin action. SOC2-grade.
 
 Fields:
-    event_type      "chat", "tool_call", "data_query", "context_admin", ...
+    event_type      "chat", "tool_call", "support_action", "context_admin", ...
     user_id, tenant_id, role
     method + path   for HTTP-driven events
     sources_used    list of source identifiers the agent touched

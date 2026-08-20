@@ -7,12 +7,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "services/api/frontend/**"
+      - "apps/support-web/**"
+      - "apps/analytics-web/**"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
     branches: [main]
     paths:
-      - "services/api/frontend/**"
+      - "apps/support-web/**"
+      - "apps/analytics-web/**"
       - ".github/workflows/ci-frontend.yml"
 
 # Cancel superseded runs on the same branch / PR.
@@ -22,7 +24,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: services/api/frontend
+    working-directory: apps/support-web
 
 jobs:
   # ──────────────────────────────────────────────────
@@ -40,7 +42,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: services/api/frontend/package-lock.json
+          cache-dependency-path: apps/support-web/package-lock.json
 
       - name: Install dependencies
         # `npm install` rather than `npm ci` because lockfile drift between
@@ -76,7 +78,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: services/api/frontend/package-lock.json
+          cache-dependency-path: apps/support-web/package-lock.json
 
       - name: Install dependencies
         # `npm install` rather than `npm ci` because lockfile drift between
@@ -132,7 +134,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: services/api/frontend/package-lock.json
+          cache-dependency-path: apps/support-web/package-lock.json
 
       - name: Install dependencies
         # `npm install` rather than `npm ci` because lockfile drift between
@@ -153,5 +155,51 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: services/api/frontend/playwright-report/
+          path: apps/support-web/playwright-report/
           retention-days: 7
+
+  analytics:
+    name: Analytics Web Type-check & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/analytics-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/analytics-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: TypeScript type-check
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+  product-images:
+    name: Web Docker Build (${{ matrix.product }})
+    runs-on: ubuntu-latest
+    needs: [unit, analytics]
+    strategy:
+      matrix:
+        include:
+          - product: support-web
+            context: apps/support-web
+          - product: analytics-web
+            context: apps/analytics-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: false
+          tags: compass-${{ matrix.product }}:ci-${{ github.sha }}

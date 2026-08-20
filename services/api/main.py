@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
 
 from app.agents.nodes.retriever import set_clients as set_retriever_clients
 from app.cache.redis import redis_client
@@ -201,14 +200,6 @@ async def lifespan(app: FastAPI):
         set_assembler(ContextAssembler())
         logger.info("Context layers enabled — assembler initialized")
 
-    # 6. Data Analytics — init engine if enabled
-    if settings.DATA_ANALYTICS_ENABLED:
-        from app.agents.nodes.data_analytics import set_analytics_llm
-        from app.analytics.engine import init_analytics_engine
-        init_analytics_engine()
-        set_analytics_llm(llm_client)
-        logger.info("Data analytics enabled — engine initialized")
-
     # Load per-tenant configurations
     from app.tenants.registry import tenant_registry
     await tenant_registry.load(source=settings.TENANT_CONFIG_SOURCE)
@@ -218,14 +209,6 @@ async def lifespan(app: FastAPI):
         from app.auth.jwks import init_jwks_fetcher
         await init_jwks_fetcher(settings.JWT_JWKS_URL)
         logger.info(f"JWKS fetcher initialised for {settings.AUTH_PROVIDER}")
-
-    # Wire up OpenTelemetry observability (tracing + auto-instrumentation)
-    try:
-        from app.observability import setup_observability
-        setup_observability(app)
-        logger.info("Observability instrumented")
-    except Exception as e:
-        logger.warning(f"Observability setup skipped (optional deps missing): {e}")
 
     # Sentry — error tracking for the FastAPI side. Opt-in via SENTRY_DSN.
     # Soft import keeps deploys without sentry-sdk runnable (the SDK is
@@ -366,21 +349,20 @@ app.include_router(
 )
 app.include_router(feedback_routes.router, prefix="/api/v1/feedback", tags=["Feedback"])
 
-# Serve Chat UI at root "/"
+# OpenTelemetry instrumentation adds ASGI middleware and therefore must run
+# before the application's lifespan starts accepting requests.
+try:
+    from app.observability import setup_observability
+
+    setup_observability(app)
+    logger.info("Observability instrumented")
+except Exception as e:
+    logger.warning(f"Observability setup skipped (optional deps missing): {e}")
+
+# The support web product is deployed independently from this API. Keep the
+# legacy single-file UI at /v1 for operational fallback only.
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-SPA_DIST_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-SPA_AVAILABLE = os.path.isdir(SPA_DIST_DIR) and os.path.isfile(os.path.join(SPA_DIST_DIR, "index.html"))
 
-
-# Mount the new SPA's static assets (always available when built)
-if SPA_AVAILABLE:
-    app.mount(
-        "/assets",
-        StaticFiles(directory=os.path.join(SPA_DIST_DIR, "assets")),
-        name="spa-assets",
-    )
-
-# Legacy v1 chat UI — always available at /v1
 @app.get("/v1", include_in_schema=False)
 @app.get("/v1/", include_in_schema=False)
 async def serve_legacy_ui():
@@ -389,37 +371,11 @@ async def serve_legacy_ui():
 
 @app.get("/", include_in_schema=False)
 async def serve_ui():
-    """
-    Serve the new Compass SPA when NEW_UI_ENABLED=true and the build exists,
-    otherwise fall back to the legacy v1 UI. The legacy UI stays reachable
-    at /v1 either way.
-    """
-    if settings.NEW_UI_ENABLED and SPA_AVAILABLE:
-        return FileResponse(os.path.join(SPA_DIST_DIR, "index.html"))
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
-
-
-# SPA client-side routes — return index.html for any unknown path under the SPA
-# (so /threads, /saved, /solutions/finance, etc. all hit the React Router).
-@app.get("/{spa_path:path}", include_in_schema=False)
-async def serve_spa_route(spa_path: str):
-    if not (settings.NEW_UI_ENABLED and SPA_AVAILABLE):
-        return Response(status_code=404)
-    # Don't shadow API or asset paths
-    if spa_path.startswith(("api/", "auth/", "health/", "assets/", "v1/", "static/")):
-        return Response(status_code=404)
-    # Serve actual files if present
-    candidate = os.path.join(SPA_DIST_DIR, spa_path)
-    if os.path.isfile(candidate):
-        return FileResponse(candidate)
-    # Otherwise, hand off to React Router
-    return FileResponse(os.path.join(SPA_DIST_DIR, "index.html"))
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    if SPA_AVAILABLE and os.path.isfile(os.path.join(SPA_DIST_DIR, "compass-favicon.svg")):
-        return FileResponse(os.path.join(SPA_DIST_DIR, "compass-favicon.svg"))
     return Response(status_code=204)
 
 if __name__ == "__main__":

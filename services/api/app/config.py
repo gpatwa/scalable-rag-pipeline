@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Used in data_plane mode where the entire deployment is single-tenant.
     SINGLE_TENANT_MODE: bool = False
 
+    # Compatibility-only: analytics is now an independent product, but older
+    # local .env files may still include this setting. It has no runtime effect
+    # in the support API and can be removed after the configuration migration.
+    DATA_ANALYTICS_ENABLED: bool | None = None
+
     # -----------------------------------------------------------------
     # Database (Aurora Postgres / Azure Flexible Server)
     # -----------------------------------------------------------------
@@ -140,15 +145,6 @@ class Settings(BaseSettings):
     CONTEXT_LAYER4_ENABLED: bool = True        # Business context
     CONTEXT_LAYERS_MAX_TOKENS: int = 1500      # Token budget for context block
     CONTEXT_FRESHNESS_DECAY_DAYS: int = 90     # Freshness score half-life in days
-
-    # -----------------------------------------------------------------
-    # Data Analytics Agent
-    # -----------------------------------------------------------------
-    NEW_UI_ENABLED: bool = False               # Serve Compass v2 SPA at root when on (legacy at /v1)
-    DATA_ANALYTICS_ENABLED: bool = False       # Master switch (default off)
-    ANALYTICS_DB_URL: Optional[str] = None     # Separate read-only DB (falls back to DATABASE_URL)
-    ANALYTICS_QUERY_TIMEOUT: int = 10          # Max seconds per SQL query
-    ANALYTICS_MAX_ROWS: int = 1000             # Max rows returned per query
 
     # -----------------------------------------------------------------
     # Iterative clarification

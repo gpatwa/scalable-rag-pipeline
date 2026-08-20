@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
@@ -8,8 +7,6 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 def _ctx(role: str = "admin", tenant_id: str = "tenant-a", user_id: str = "alice"):

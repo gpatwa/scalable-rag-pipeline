@@ -11,7 +11,7 @@ CI/CD pipelines, observability, testing, security, and troubleshooting.
 | Workflow | Trigger | Jobs |
 |----------|---------|------|
 | `ci.yml` | PR + push to main | Lint (ruff), Test (pytest), Docker Build, Terraform Validate |
-| `deploy-staging.yml` | Push to main | Build → Push to ECR/ACR → Helm upgrade staging |
+| `deploy-staging.yml` | Manual dispatch | Test → Build → Push to ECR/ACR → Helm upgrade staging |
 | `deploy-prod.yml` | Manual dispatch | Approval gate → Re-tag image → Helm upgrade prod |
 
 ### CI Pipeline (`ci.yml`)
@@ -20,7 +20,7 @@ CI/CD pipelines, observability, testing, security, and troubleshooting.
 PR opened / push to main
   ├── Lint & Test
   │   ├── ruff check (linting)
-  │   └── pytest (198 tests, SQLite mock)
+  │   └── pytest (SQLite-backed unit/integration suite)
   ├── Docker Build
   │   └── Buildx with GHA cache
   └── Terraform Validate
@@ -28,9 +28,16 @@ PR opened / push to main
       └── Azure (infra/terraform/azure/)
 ```
 
-### Staging Deploy (Automatic)
+### Staging Deploy (Manual)
 
-Every merge to `main` triggers a staging deploy:
+Staging is intentionally manual-only so local verification remains the default path.
+Trigger it from GitHub Actions or with:
+
+```bash
+gh workflow run "Deploy Staging"
+```
+
+The workflow then:
 
 1. Build Docker image with tag `staging-<SHA>`
 2. Push to ECR (AWS) and ACR (Azure)
@@ -91,19 +98,23 @@ The API uses structured JSON logging with configurable levels:
 
 ### Test Suite
 
-198 tests across three service test suites:
+Product and platform tests run as separate service suites:
 
 | Suite | Count | Description |
 |-------|-------|-------------|
-| **Monolith** (`services/api/tests/`) | 132 | Config, auth, tenants, clients, agents, API endpoints, streaming, upload, providers |
+| **Support API** (`services/api/tests/`) | Run `pytest --collect-only` | Config, auth, support workflows, agents, streaming, upload, providers |
+| **Analytics API** (`services/analytics-api/tests/`) | Run `pytest --collect-only` | Contracts, schema grounding, SQL safety, engine, service boundary |
 | **Control Plane** (`services/control-plane/tests/`) | 48 | JWT auth, tenant CRUD, data plane registry, proxy routing, rate limiting, usage tracking |
 | **Data Plane** (`services/data-plane/tests/`) | 18 | API key auth, user context extraction, TenantContext, health endpoints, registration, config |
 
 ### Running Tests
 
 ```bash
-# Monolith tests (default)
+# Support and analytics product API tests
 make test
+
+# Analytics API only
+make test-analytics
 
 # Control plane tests only
 make test-control-plane
@@ -111,7 +122,7 @@ make test-control-plane
 # Data plane tests only
 make test-data-plane
 
-# All three suites (runs sequentially to avoid conftest.py collisions)
+# All service suites (runs sequentially to avoid conftest.py collisions)
 make test-all
 
 # Specific test file
@@ -122,7 +133,8 @@ pytest services/data-plane/tests/test_dp_auth.py -v
 pytest services/api/tests/ --cov=services/api/app --cov-report=term-missing
 ```
 
-> **Note:** The three test suites run in separate pytest sessions because each service has its own `conftest.py` with different path and module setup. `make test-all` handles this automatically.
+> **Note:** Service suites run in separate pytest sessions because they have
+> independent import roots and fixtures. `make test-all` handles this automatically.
 
 ### Test Environment
 
@@ -185,14 +197,15 @@ Hooks run on every commit:
 
 ## Cost Optimization
 
-### Karpenter Autoscaling
+### Compute Autoscaling
 
-| Strategy | Savings | How |
-|----------|---------|-----|
-| SPOT instances | ~70% | Karpenter prefers SPOT for both CPU and GPU pools |
-| GPU scale-to-zero | 100% idle | GPU nodes terminate 30s after last pod exits |
-| Consolidation | variable | Karpenter repacks pods onto fewer nodes when underutilized |
-| Burstable instances | ~60% vs general | t3a/t4g for dev, c6i/m6i for prod |
+| Cloud | Mechanism | Current behavior |
+|-------|-----------|------------------|
+| AWS/EKS | Karpenter | Provisions eligible CPU/GPU nodes, supports Spot and consolidation |
+| Azure/AKS | Native Cluster Autoscaler | Scales the Terraform-managed system and app node pools within configured min/max bounds |
+
+Ray can scale worker pods, but Azure GPU-node provisioning requires a compatible AKS GPU
+node pool; the AWS Karpenter manifests do not apply to Azure.
 
 ### Semantic Caching
 
@@ -223,9 +236,16 @@ kubectl describe pod <pod-name>
 # Look for: "Insufficient cpu/memory" or "no nodes available"
 ```
 
-**Fix:** Check Karpenter logs — it may not have suitable node types configured:
+**AWS/EKS:** Check Karpenter logs; it may not have suitable node types configured:
 ```bash
 kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter
+```
+
+**Azure/AKS:** Check the native autoscaler status and node-pool bounds:
+
+```bash
+az aks nodepool show --resource-group rag-platform-rg --cluster-name rag-platform-aks --name app
+kubectl get events --sort-by=.metadata.creationTimestamp
 ```
 
 #### PVC stuck in Pending
@@ -277,7 +297,7 @@ kubectl apply -f <(envsubst < deploy/karpenter/nodepool.yaml)
 # API logs
 kubectl logs -l app=api-service --tail=100
 
-# Karpenter logs
+# Karpenter logs (AWS/EKS only)
 kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --tail=50
 
 # Ray head logs

@@ -10,18 +10,18 @@ resource "azurerm_kubernetes_cluster" "aks" {
   dns_prefix          = var.cluster_name
   # 1.32 became LTS-only (Premium tier). Default non-LTS in eastus is
   # 1.34 (`az aks get-versions -l eastus`). Bump in lock-step with that.
-  kubernetes_version = "1.34"
+  kubernetes_version = var.kubernetes_version
 
   # System node pool — runs CoreDNS, metrics-server, etc.
   default_node_pool {
-    name                 = "system"
-    vm_size              = "Standard_B2s" # Burstable 2 vCPU, 4 GB — similar to t3a.medium
-    node_count           = 1
-    min_count            = 1
-    max_count            = 2
+    name                = "system"
+    vm_size             = "Standard_B2s" # Burstable 2 vCPU, 4 GB — similar to t3a.medium
+    node_count          = 1
+    min_count           = 1
+    max_count           = 2
     enable_auto_scaling = true
-    os_disk_size_gb      = 30
-    vnet_subnet_id       = azurerm_subnet.aks.id
+    os_disk_size_gb     = 30
+    vnet_subnet_id      = azurerm_subnet.aks.id
 
     # Note: AKS API no longer allows custom taints on the default node pool.
     # Use the app node pool for workloads and keep system pool for cluster addons.
@@ -45,7 +45,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     network_plugin    = "azure"
     network_policy    = "calico"
     load_balancer_sku = "standard"
-    service_cidr      = "172.16.0.0/16"  # Must not overlap with vnet_cidr
+    service_cidr      = "172.16.0.0/16" # Must not overlap with vnet_cidr
     dns_service_ip    = "172.16.0.10"
   }
 

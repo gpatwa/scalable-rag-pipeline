@@ -1,7 +1,6 @@
 # services/api/app/agents/graph.py
 from langgraph.graph import END, StateGraph
 
-from app.agents.nodes.data_analytics import data_analytics_node
 from app.agents.nodes.evaluator import evaluator_node, retry_node
 from app.agents.nodes.planner import planner_node, step_advance_node
 from app.agents.nodes.responder import generate_node
@@ -27,8 +26,6 @@ def route_after_planner(state: AgentState) -> str:
         return "responder"
     elif action == "tool_use":
         return "tool_node"
-    elif action == "data_query" and settings.DATA_ANALYTICS_ENABLED:
-        return "data_analytics"
     else:  # "retrieve" or fallback
         return "retriever"
 
@@ -79,7 +76,6 @@ workflow.add_node("tool_node", tool_node)
 workflow.add_node("evaluator", evaluator_node)
 workflow.add_node("retry", retry_node)
 workflow.add_node("step_advance", step_advance_node)
-workflow.add_node("data_analytics", data_analytics_node)
 
 # 2. Define Edges
 # Experience recall runs once, ahead of the planner, when enabled. Wiring it as
@@ -101,11 +97,9 @@ _planner_edges = {
     "retriever": "retriever",
     "responder": "responder",
     "tool_node": "tool_node",
-    "data_analytics": "data_analytics",
 }
 
 workflow.add_conditional_edges("planner", route_after_planner, _planner_edges)
-workflow.add_edge("data_analytics", "responder")
 
 # After retrieval → context enrichment (if enabled) → respond
 if settings.CONTEXT_LAYERS_ENABLED:

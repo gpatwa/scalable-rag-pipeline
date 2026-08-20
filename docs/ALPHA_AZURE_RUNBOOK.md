@@ -13,7 +13,7 @@ and [`ALPHA_LOOM_SCRIPT.md`](./ALPHA_LOOM_SCRIPT.md) (stakeholder demo).
 - A public URL (Azure LoadBalancer IP, http only) reachable from any
   browser.
 - All in-app routes work: `/welcome`, `/`, `/sources`, `/threads`,
-  `/saved`, `/agents`, `/dashboards`, `/knowledge`, `/solutions/*`.
+  `/saved`, `/agents`, `/dashboards`, `/knowledge`, `/support`, `/solutions/*`.
 - Feedback widget posts to `POST /api/v1/feedback` (Slack relay
   optional via `FEEDBACK_SLACK_WEBHOOK_URL`).
 - Sentry capture optional via `SENTRY_DSN` / `VITE_SENTRY_DSN`.
@@ -207,7 +207,7 @@ terraform destroy
 
 ### Updating the deployment
 
-Push to main → workflow auto-deploys. Manual force re-deploy:
+Pushes to `main` run CI but do not deploy staging. Trigger the manual staging workflow:
 
 ```bash
 gh workflow run "Deploy Staging"
@@ -302,4 +302,6 @@ az consumption usage list --top 20 --query "[].{date:date, name:meterDetails.met
 | Seed script | `scripts/seed_alpha.py` |
 | Deploy workflow | `.github/workflows/deploy-staging.yml` |
 | Backend env-vars source-of-truth | `services/api/app/config.py` |
-| Frontend env-vars source-of-truth | `services/api/frontend/.env.example` |
+| Support web env-vars source-of-truth | `apps/support-web/.env.example` |
+| Analytics API env-vars source-of-truth | `services/analytics-api/.env.example` |
+| Analytics web env-vars source-of-truth | `apps/analytics-web/.env.example` |

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 from fastapi import BackgroundTasks
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 def _ctx(role: str = "admin", tenant_id: str = "tenant-a", user_id: str = "alice"):
