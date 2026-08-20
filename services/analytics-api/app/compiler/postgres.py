@@ -1,19 +1,20 @@
 """Narrow deterministic PostgreSQL compiler for certified analytical intents.
 
-This spike intentionally supports one physical dataset per query and excludes
-joins, ratios, and automatic policy injection. Those gaps are explicit inputs
-to EA-014 through EA-016; accepting them silently would weaken the trust model.
+This adapter intentionally supports one physical dataset per query and excludes
+joins and ratios. Policy filters are injected only from typed contract filters
+and explicit context values; join and ratio gaps remain later milestones.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from packages.platform_contracts.analytics_intent import AnalyticalIntent, IntentFilter
+from packages.platform_contracts.analytics_intent import AnalyticalIntent
 from packages.platform_contracts.semantic import (
     SemanticContract,
     SemanticDimension,
     SemanticField,
+    SemanticFilter,
     SemanticMetric,
 )
 
@@ -26,12 +27,18 @@ class CompilationError(ValueError):
 class CompiledQuery:
     sql: str
     parameters: dict[str, Any]
+    applied_filter_ids: tuple[str, ...] = ()
 
 
 class PostgreSQLCompiler:
     """Compile one validated semantic intent into parameterized PostgreSQL SQL."""
 
-    def compile(self, intent: AnalyticalIntent, contract: SemanticContract) -> CompiledQuery:
+    def compile(
+        self,
+        intent: AnalyticalIntent,
+        contract: SemanticContract,
+        policy_values: dict[str, Any] | None = None,
+    ) -> CompiledQuery:
         intent.validate_against(contract)
         dataset = _find_by_id(contract.datasets, intent.dataset_id)
         selected_metrics = [_find_by_id(contract.metrics, metric.metric_id) for metric in intent.metrics]
@@ -45,9 +52,6 @@ class PostgreSQLCompiler:
             raise CompilationError("this compiler supports groupings from the intent dataset only")
         if any(metric.aggregation == "ratio" for metric in selected_metrics):
             raise CompilationError("ratio metrics are not supported by this compiler spike")
-        if any(metric.required_filter_ids for metric in selected_metrics):
-            raise CompilationError("metrics with required filters require policy injection")
-
         dimensions = [
             _dimension_sql(group.time_granularity, dimension, selected_fields[dimension.field_id])
             for group, dimension in zip(intent.group_by, selected_dimensions, strict=True)
@@ -57,8 +61,14 @@ class PostgreSQLCompiler:
             f"{expression} AS dimension_{index}" for index, expression in enumerate(dimensions)
         ] + [f"{expression} AS metric_{index}" for index, expression in enumerate(metrics)]
 
+        required_filters = _required_filters(intent, contract)
         where_parts, parameters = _where_clause(
-            intent, selected_fields, dimensions_by_id, dataset.id
+            intent,
+            selected_fields,
+            dimensions_by_id,
+            dataset.id,
+            required_filters,
+            policy_values or {},
         )
         sql_parts = [
             f"SELECT {', '.join(select_items)}",
@@ -75,7 +85,11 @@ class PostgreSQLCompiler:
             ]
             sql_parts.append(f"ORDER BY {', '.join(order_parts)}")
         sql_parts.append(f"LIMIT {intent.limit}")
-        return CompiledQuery(sql="\n".join(sql_parts), parameters=parameters)
+        return CompiledQuery(
+            sql="\n".join(sql_parts),
+            parameters=parameters,
+            applied_filter_ids=tuple(filter_.id for filter_ in required_filters),
+        )
 
 
 def _metric_sql(metric: SemanticMetric, fields: dict[str, SemanticField]) -> str:
@@ -113,14 +127,26 @@ def _where_clause(
     fields: dict[str, SemanticField],
     dimensions: dict[str, SemanticDimension],
     dataset_id: str,
+    required_filters: list[SemanticFilter],
+    policy_values: dict[str, Any],
 ) -> tuple[list[str], dict[str, Any]]:
     clauses: list[str] = []
     parameters: dict[str, Any] = {}
+    for filter_ in required_filters:
+        field = fields.get(filter_.field_id)
+        if field is None or field.dataset_id != dataset_id:
+            raise CompilationError("required policy filter is outside the intent dataset")
+        values = filter_.literal_value if filter_.value_source == "literal" else policy_values.get(filter_.id)
+        if values is None:
+            raise CompilationError(f"missing policy value for required filter {filter_.id}")
+        if not isinstance(values, list):
+            values = [values]
+        clauses.extend(_filter_parts(field, filter_.operator, values, parameters))
     for filter_ in intent.filters:
         field = fields[filter_.field_id]
         if field.dataset_id != dataset_id:
             raise CompilationError("this compiler supports filters from the intent dataset only")
-        clauses.extend(_filter_sql(filter_, field, parameters))
+        clauses.extend(_filter_parts(field, filter_.operator, filter_.values, parameters))
     if intent.time_range:
         dimension = dimensions[intent.time_range.dimension_id]
         field = fields[dimension.field_id]
@@ -140,7 +166,9 @@ def _where_clause(
     return clauses, parameters
 
 
-def _filter_sql(filter_: IntentFilter, field: SemanticField, parameters: dict[str, Any]) -> list[str]:
+def _filter_parts(
+    field: SemanticField, operator_name: str, values: list[Any], parameters: dict[str, Any]
+) -> list[str]:
     operator = {
         "equals": "=",
         "not_equals": "!=",
@@ -148,19 +176,41 @@ def _filter_sql(filter_: IntentFilter, field: SemanticField, parameters: dict[st
         "greater_than_or_equal": ">=",
         "less_than": "<",
         "less_than_or_equal": "<=",
-    }.get(filter_.operator)
+    }.get(operator_name)
     column = _column(field)
     if operator:
         key = f"p{len(parameters)}"
-        parameters[key] = filter_.values[0]
+        parameters[key] = values[0]
         return [f"{column} {operator} :{key}"]
-    keyword = "IN" if filter_.operator == "in" else "NOT IN"
+    keyword = "IN" if operator_name == "in" else "NOT IN"
     placeholders = []
-    for value in filter_.values:
+    for value in values:
         key = f"p{len(parameters)}"
         parameters[key] = value
         placeholders.append(f":{key}")
     return [f"{column} {keyword} ({', '.join(placeholders)})"]
+
+
+def _required_filters(intent: AnalyticalIntent, contract: SemanticContract) -> list[SemanticFilter]:
+    selected_ids = {intent.dataset_id}
+    selected_ids.update(metric.metric_id for metric in intent.metrics)
+    selected_ids.update(group.dimension_id for group in intent.group_by)
+    selected_ids.update(filter_.field_id for filter_ in intent.filters)
+    selected_metric_ids = {selected.metric_id for selected in intent.metrics}
+    required_ids = {
+        filter_id
+        for metric in contract.metrics
+        if metric.id in selected_metric_ids
+        for filter_id in metric.required_filter_ids
+    }
+    required_ids.update(
+        filter_id
+        for policy in contract.policies
+        if set(policy.target_ids) & selected_ids
+        for filter_id in policy.required_filter_ids
+    )
+    filters_by_id = {filter_.id: filter_ for filter_ in contract.filters}
+    return [filters_by_id[filter_id] for filter_id in sorted(required_ids)]
 
 
 def _sort_index(sort: Any, intent: AnalyticalIntent) -> int:

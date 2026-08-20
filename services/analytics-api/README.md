@@ -64,6 +64,8 @@ injection remain explicit later milestones.
 EA-014 exposes that compiler through `CertifiedIntentCompiler`, which resolves
 the exact certified registry document before compiling. The current route is
 unchanged until the later planner and execution milestones are complete.
+Compiler adapters are selected by dialect through `CompilerRegistry`; a second
+provider can register without changing intent or planner contracts.
 
 ## Local Development
 

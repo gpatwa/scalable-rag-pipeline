@@ -97,12 +97,58 @@ def test_compiler_produces_deterministic_parameterized_postgres_sql(compiler_con
     assert compiler.compile(compiler_intent, compiler_contract) == compiled
 
 
-def test_compiler_rejects_required_filters_until_policy_injection_exists(compiler_contract, compiler_intent):
-    contract = compiler_contract.model_copy(deep=True)
-    contract.metrics[0].required_filter_ids = ["tenant_scope"]
+def test_compiler_requires_policy_context_for_required_filters(compiler_contract, compiler_intent):
+    contract_data = compiler_contract.model_dump()
+    contract_data["filters"] = [
+        {
+            "id": "tenant_scope",
+            "dataset_id": "orders",
+            "field_id": "orders.status",
+            "operator": "equals",
+            "value_source": "request_context",
+        }
+    ]
+    contract_data["metrics"][0]["required_filter_ids"] = ["tenant_scope"]
+    contract = SemanticContract.model_validate(contract_data)
 
-    with pytest.raises(CompilationError, match="require policy injection"):
+    with pytest.raises(CompilationError, match="missing policy value"):
         PostgreSQLCompiler().compile(compiler_intent, contract)
+
+    compiled = PostgreSQLCompiler().compile(
+        compiler_intent, contract, policy_values={"tenant_scope": "tenant-a"}
+    )
+    assert compiled.parameters["p0"] == "tenant-a"
+    assert compiled.applied_filter_ids == ("tenant_scope",)
+
+
+def test_compiler_injects_literal_policy_filters_without_caller_values(compiler_contract, compiler_intent):
+    contract_data = compiler_contract.model_dump()
+    contract_data["filters"] = [
+        {
+            "id": "paid_only",
+            "dataset_id": "orders",
+            "field_id": "orders.status",
+            "operator": "equals",
+            "value_source": "literal",
+            "literal_value": "paid",
+        }
+    ]
+    contract_data["policies"] = [
+        {
+            "id": "revenue_policy",
+            "target_ids": ["revenue"],
+            "classification": "internal",
+            "allowed_purposes": ["analytics"],
+            "required_filter_ids": ["paid_only"],
+            "owner_ids": ["team.data"],
+        }
+    ]
+    contract = SemanticContract.model_validate(contract_data)
+
+    compiled = PostgreSQLCompiler().compile(compiler_intent, contract)
+
+    assert compiled.parameters["p0"] == "paid"
+    assert compiled.applied_filter_ids == ("paid_only",)
 
 
 def test_compiler_rejects_ratio_metrics_until_the_expression_is_governed(compiler_contract, compiler_intent):
