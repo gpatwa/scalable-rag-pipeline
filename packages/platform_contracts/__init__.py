@@ -6,6 +6,7 @@ from packages.platform_contracts.analytics import (
     AnalyticsQueryResponse,
     AnalyticsSchemaResponse,
 )
+from packages.platform_contracts.analytics_intent import AnalyticalIntent
 from packages.platform_contracts.analytics_v2 import AnalyticsV2Response
 from packages.platform_contracts.semantic import SemanticContract, SemanticRegistryDocument
 
@@ -15,6 +16,7 @@ __all__ = [
     "AnalyticsQueryResponse",
     "AnalyticsSchemaResponse",
     "AnalyticsV2Response",
+    "AnalyticalIntent",
     "SemanticContract",
     "SemanticRegistryDocument",
 ]

@@ -51,6 +51,11 @@ physical fields, entities and grain, dimensions, certified metrics, approved
 joins, required filters, policy references, and owners. Contracts contain no
 warehouse SQL and reject unknown or cross-dataset references when loaded.
 
+`packages/platform_contracts/analytics_intent.py` adds the dialect-neutral
+intent IR that planners will emit: semantic metric/dimension/field IDs, time
+range, filters, ordering, and result limit. It contains no raw SQL and can be
+validated against an exact semantic-contract version before compilation.
+
 ## Local Development
 
 ```bash

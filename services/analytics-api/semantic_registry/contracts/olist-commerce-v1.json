@@ -15,6 +15,7 @@
     "fields": [
       {"id": "orders.order_id", "dataset_id": "orders", "physical_name": "order_id", "data_type": "string"},
       {"id": "orders.order_status", "dataset_id": "orders", "physical_name": "order_status", "data_type": "string"},
+      {"id": "orders.purchase_timestamp", "dataset_id": "orders", "physical_name": "order_purchase_timestamp", "data_type": "timestamp"},
       {"id": "orders.payment_total", "dataset_id": "orders", "physical_name": "payment_total", "data_type": "decimal"},
       {"id": "order_items.order_id", "dataset_id": "order_items", "physical_name": "order_id", "data_type": "string"},
       {"id": "order_items.price", "dataset_id": "order_items", "physical_name": "price", "data_type": "decimal"}
@@ -23,7 +24,8 @@
       {"id": "order", "dataset_id": "orders", "grain": {"kind": "order", "key_field_ids": ["orders.order_id"]}, "owner_ids": ["team.analytics"]}
     ],
     "dimensions": [
-      {"id": "order_status", "dataset_id": "orders", "field_id": "orders.order_status", "entity_id": "order", "dimension_type": "categorical", "owner_ids": ["team.analytics"]}
+      {"id": "order_status", "dataset_id": "orders", "field_id": "orders.order_status", "entity_id": "order", "dimension_type": "categorical", "owner_ids": ["team.analytics"]},
+      {"id": "purchase_time", "dataset_id": "orders", "field_id": "orders.purchase_timestamp", "entity_id": "order", "dimension_type": "temporal", "owner_ids": ["team.analytics"]}
     ],
     "filters": [
       {"id": "delivered_orders", "dataset_id": "orders", "field_id": "orders.order_status", "operator": "equals", "value_source": "literal", "literal_value": "delivered"}
