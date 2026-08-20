@@ -61,6 +61,10 @@ single-dataset subset. Its comparison with Cube Core is recorded in
 `docs/adr/ADR-EA-002-cube-core-vs-internal-compiler.md`; joins and policy
 injection remain explicit later milestones.
 
+EA-014 exposes that compiler through `CertifiedIntentCompiler`, which resolves
+the exact certified registry document before compiling. The current route is
+unchanged until the later planner and execution milestones are complete.
+
 ## Local Development
 
 ```bash
