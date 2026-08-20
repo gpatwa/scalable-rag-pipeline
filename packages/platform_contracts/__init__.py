@@ -13,6 +13,7 @@ from packages.platform_contracts.metadata import (
     MetadataSearchResult,
     MetadataSnapshot,
 )
+from packages.platform_contracts.security import AnalyticsIdentity, AuditEvent, AuthorizationDecision
 
 __all__ = [
     "MetadataAsset",
@@ -26,4 +27,7 @@ __all__ = [
     "AnalyticsPlan",
     "AnalyticsReviewRequest",
     "SavedAnalysis",
+    "AnalyticsIdentity",
+    "AuditEvent",
+    "AuthorizationDecision",
 ]
