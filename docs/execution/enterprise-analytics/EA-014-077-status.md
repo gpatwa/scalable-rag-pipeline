@@ -32,7 +32,8 @@ runtime, governance, and AI-operations packages.
 - EA-055 to EA-057: SLO, alert, backup, retention, and drill contracts plus a
   runbook exist; production burn-in and restore/HA/rollback drills remain
   external.
-- EA-072 to EA-076: pilot checklist exists; security counsel, SBOM signing,
+- EA-072 to EA-076: reusable data-flow, supply-chain, incident-response, and
+  lifecycle/compliance artifacts now exist; security counsel, SBOM signing,
   independent penetration test, incident tabletop, DPA, residency, and
   retention approvals remain external.
 
