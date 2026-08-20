@@ -56,6 +56,11 @@ intent IR that planners will emit: semantic metric/dimension/field IDs, time
 range, filters, ordering, and result limit. It contains no raw SQL and can be
 validated against an exact semantic-contract version before compilation.
 
+The EA-013 PostgreSQL compiler spike is intentionally limited to the certified
+single-dataset subset. Its comparison with Cube Core is recorded in
+`docs/adr/ADR-EA-002-cube-core-vs-internal-compiler.md`; joins and policy
+injection remain explicit later milestones.
+
 ## Local Development
 
 ```bash

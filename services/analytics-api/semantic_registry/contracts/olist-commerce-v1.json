@@ -9,8 +9,8 @@
       {"id": "team.analytics", "display_name": "Analytics Team", "owner_type": "team"}
     ],
     "datasets": [
-      {"id": "orders", "display_name": "Orders", "source_asset_id": "olist.orders", "description": "One row per order", "owner_ids": ["team.analytics"]},
-      {"id": "order_items", "display_name": "Order items", "source_asset_id": "olist.order_items", "description": "One row per item", "owner_ids": ["team.analytics"]}
+      {"id": "orders", "display_name": "Orders", "source_asset_id": "olist.orders", "physical_name": "olist_orders", "description": "One row per order", "owner_ids": ["team.analytics"]},
+      {"id": "order_items", "display_name": "Order items", "source_asset_id": "olist.order_items", "physical_name": "olist_order_items", "description": "One row per item", "owner_ids": ["team.analytics"]}
     ],
     "fields": [
       {"id": "orders.order_id", "dataset_id": "orders", "physical_name": "order_id", "data_type": "string"},

@@ -24,6 +24,7 @@ class SemanticDataset(BaseModel):
     id: str = Field(min_length=1, max_length=255)
     display_name: str = Field(min_length=1, max_length=255)
     source_asset_id: str = Field(min_length=1, max_length=512)
+    physical_name: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1, max_length=2_000)
     owner_ids: list[str] = Field(min_length=1)
 
