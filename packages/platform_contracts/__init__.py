@@ -6,6 +6,7 @@ from packages.platform_contracts.analytics_planning import (
     AnalyticsReviewRequest,
     SavedAnalysis,
 )
+from packages.platform_contracts.evaluation import EvaluationCase, EvaluationResult, ReleaseGateReport
 from packages.platform_contracts.metadata import (
     MetadataAsset,
     MetadataColumn,
@@ -35,4 +36,7 @@ __all__ = [
     "QueryTelemetry",
     "RuntimeQueryRequest",
     "UsageRecord",
+    "EvaluationCase",
+    "EvaluationResult",
+    "ReleaseGateReport",
 ]
