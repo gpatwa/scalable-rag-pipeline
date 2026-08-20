@@ -1,3 +1,4 @@
+from packages.platform_contracts.aiops import ComponentVersion, DriftSignal, RolloutState, ValidatedCorrection
 from packages.platform_contracts.analytics_planning import (
     AnalyticsAmbiguity,
     AnalyticsClarificationState,
@@ -39,4 +40,8 @@ __all__ = [
     "EvaluationCase",
     "EvaluationResult",
     "ReleaseGateReport",
+    "ComponentVersion",
+    "DriftSignal",
+    "RolloutState",
+    "ValidatedCorrection",
 ]
