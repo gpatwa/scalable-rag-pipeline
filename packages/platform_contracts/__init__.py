@@ -13,6 +13,7 @@ from packages.platform_contracts.metadata import (
     MetadataSearchResult,
     MetadataSnapshot,
 )
+from packages.platform_contracts.runtime import QueryBudget, QueryTelemetry, RuntimeQueryRequest, UsageRecord
 from packages.platform_contracts.security import AnalyticsIdentity, AuditEvent, AuthorizationDecision
 
 __all__ = [
@@ -30,4 +31,8 @@ __all__ = [
     "AnalyticsIdentity",
     "AuditEvent",
     "AuthorizationDecision",
+    "QueryBudget",
+    "QueryTelemetry",
+    "RuntimeQueryRequest",
+    "UsageRecord",
 ]
