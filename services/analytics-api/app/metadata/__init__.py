@@ -1,5 +1,7 @@
 """Catalog-neutral analytics metadata providers and quality tools."""
 
+from app.metadata.catalog_adapters import DataHubMetadataProvider
+from app.metadata.exploration import ExploratoryDiscovery, create_exploratory_discovery
 from app.metadata.providers import (
     ContractPolicyProvider,
     DbtManifestProvider,
@@ -14,6 +16,8 @@ from app.metadata.quality import MetadataQualityGate, rank_assets
 
 __all__ = [
     "DbtManifestProvider",
+    "DataHubMetadataProvider",
+    "ExploratoryDiscovery",
     "GitSemanticModelProvider",
     "MetadataProvider",
     "ContractPolicyProvider",
@@ -23,4 +27,5 @@ __all__ = [
     "PostgresMetadataProvider",
     "SemanticModelProvider",
     "rank_assets",
+    "create_exploratory_discovery",
 ]
