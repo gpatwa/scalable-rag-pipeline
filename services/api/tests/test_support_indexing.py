@@ -1,15 +1,12 @@
 # services/api/tests/test_support_indexing.py
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 async def _session():

@@ -13,6 +13,8 @@ scripts/
 
 # API service (has its own Dockerfile)
 services/
+!services/analytics-api/
+!services/analytics-api/**
 
 # Documentation
 docs/

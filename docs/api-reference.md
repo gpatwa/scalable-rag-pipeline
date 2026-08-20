@@ -133,6 +133,85 @@ curl -X POST http://localhost:8000/api/v1/feedback \
     -d '{"message_id": "msg-456", "rating": "positive", "comment": "Accurate answer"}'
 ```
 
+### Support Resolution Intelligence
+
+The support API is tenant-scoped through JWT authentication. Sync and direct indexing
+operations require the `admin` role. Search, resolution, workflow, and action operations
+require an authenticated tenant context.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/support/demo/seed` | Idempotently seed representative support data and attempt indexing |
+| `POST` | `/api/v1/support/jobs/sync-index` | Queue a durable connector sync/index job |
+| `GET` | `/api/v1/support/jobs` | List recent support jobs |
+| `GET` | `/api/v1/support/jobs/summary` | Return support job status totals |
+| `GET` | `/api/v1/support/jobs/{job_id}` | Get one support job |
+| `POST` | `/api/v1/support/jobs/{job_id}/cancel` | Cancel a queued/running job |
+| `POST` | `/api/v1/support/jobs/{job_id}/retry` | Queue a retry for an eligible job |
+| `POST` | `/api/v1/support/sync/{provider}` | Run a direct provider sync (admin) |
+| `POST` | `/api/v1/support/index` | Index canonical support records (admin) |
+| `GET` | `/api/v1/support/insights/repeats` | Find repeated issue clusters |
+| `POST` | `/api/v1/support/insights/repeats/workflow` | Build a cited playbook, knowledge gap, and deflection estimate |
+| `GET` | `/api/v1/support/search` | Hybrid vector/lexical search with score traces |
+| `POST` | `/api/v1/support/resolve` | Answer a support question from cited prior resolutions |
+| `GET` | `/api/v1/support/tickets` | List normalized tickets |
+| `GET` | `/api/v1/support/sync-runs` | List connector sync runs |
+
+Connector catalog and connection management endpoints are available under
+`/api/v1/support-integrations`.
+
+#### Trust And Execution Actions
+
+Support actions persist a command and its originating workflow for review. Current
+execution is `local_mock`: it creates reviewable macro, KB, and product follow-up
+artifacts but does not mutate an external system.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/support/actions` | Create a persisted agent command in `generated` state |
+| `GET` | `/api/v1/support/actions` | List tenant actions, newest first |
+| `DELETE` | `/api/v1/support/actions` | Reset tenant action history for the guided demo |
+| `POST` | `/api/v1/support/actions/{action_id}/status` | Record review state and notes |
+| `POST` | `/api/v1/support/actions/{action_id}/execute` | Execute only a `ready_to_execute` action |
+
+Supported statuses are `generated`, `needs_review`, `approved`, `ready_to_execute`,
+`executed`, and `rejected`. The status endpoint cannot set `executed`; the execute
+endpoint returns HTTP 409 until the action is `ready_to_execute`.
+
+**Create action:**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/support/actions \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "cluster_id": "tag:export|timeout",
+      "cluster_title": "Export + Timeout",
+      "command_text": "Prepare a cited macro and KB update for review.",
+      "workflow": {},
+      "action_type": "support_agent_command"
+    }'
+```
+
+**Review, approve, and execute:**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/support/actions/$ACTION_ID/status \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"status":"approved","review_notes":"Evidence reviewed."}'
+
+curl -X POST http://localhost:8080/api/v1/support/actions/$ACTION_ID/status \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"status":"ready_to_execute"}'
+
+curl -X POST http://localhost:8080/api/v1/support/actions/$ACTION_ID/execute \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"execution_notes":"Local demo execution."}'
+```
+
 ### GET `/health/liveness`
 
 Kubernetes liveness probe — returns 200 if the process is running.
@@ -357,26 +436,33 @@ When context layers are enabled, the chat stream includes an additional event:
 
 ---
 
-## Data Analytics Streaming Events
+## Analytics API
 
-When `DATA_ANALYTICS_ENABLED=true`, the chat stream includes additional event types for data queries:
+Analytics runs as `services/analytics-api` on port `8090`. It does not extend
+the support chat stream.
 
-| Event Type | Fields | Description |
-|------------|--------|-------------|
-| `sql_query` | `sql`, `time_ms` | Generated SQL query and execution time in ms |
-| `data_result` | `columns`, `rows`, `row_count`, `table_html`, `chart_spec` | Query results with pre-rendered HTML table and Vega-Lite chart spec |
-| `data_error` | `content` | Error message (validation failure, timeout, etc.) |
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Readiness of the analytics database and LLM adapter |
+| `GET` | `/api/v1/analytics/schema?dataset=olist` | Allowed tables and business metrics |
+| `POST` | `/api/v1/analytics/query` | Generate, validate, and execute a read-only query |
 
-### Example: Data Query Response Stream
+Request and response models are versioned in
+`packages/platform_contracts/analytics.py`. An optional `X-API-Key` header is
+enforced when `ANALYTICS_API_KEY` is configured.
 
+```json
+{
+  "query": "Revenue by month",
+  "tenant_id": "local-demo",
+  "user_id": "local-user",
+  "dataset": "olist"
+}
 ```
-{"type":"status","node":"planner","session_id":"..."}
-{"type":"status","node":"data_analytics","session_id":"..."}
-{"type":"sql_query","sql":"SELECT DATE_TRUNC('month', ...) ...","time_ms":45,"session_id":"..."}
-{"type":"data_result","columns":["month","revenue"],"rows":[...],"row_count":18,"table_html":"<table>...","chart_spec":{...},"session_id":"..."}
-{"type":"status","node":"responder","session_id":"..."}
-{"type":"answer","content":"Revenue showed a steady upward trend...","session_id":"..."}
-```
+
+The response includes `contract_version`, generated `sql`, `columns`, `rows`,
+`row_count`, `execution_time_ms`, `truncated`, `chart_spec`, and an explicit
+`status`/`error` pair.
 
 ### Dataset Management
 

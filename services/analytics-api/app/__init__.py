@@ -1,0 +1,1 @@
+"""Standalone analytics product API."""

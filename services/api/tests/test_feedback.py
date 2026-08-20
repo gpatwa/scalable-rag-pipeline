@@ -9,14 +9,11 @@ network calls happen — the assertion is on the built payload shape.
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 def _ctx(role: str = "user", tenant_id: str = "t1", user_id: str = "alice"):

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import time
 import types
 from dataclasses import dataclass
@@ -28,9 +27,6 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock
 
 import pytest
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
-
 
 # ── Fake MCP transport / session ──────────────────────────────────────────
 

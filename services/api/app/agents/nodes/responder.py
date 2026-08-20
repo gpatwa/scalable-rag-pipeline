@@ -59,11 +59,6 @@ async def build_response_messages(state: AgentState) -> list[dict[str, Any]]:
     if context_layers:
         context_str += f"\n\n--- Business Context ---\n{context_layers}"
 
-    # Include data analytics results
-    data_error = state.get("data_query_error", "")
-    if data_error:
-        context_str += f"\n\n--- Data Query Error ---\n{data_error}\nPlease inform the user about the error and suggest a refined question."
-
     # Include long-term user memories
     user_memories = state.get("user_memories", [])
     if user_memories:

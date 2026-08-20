@@ -1,6 +1,6 @@
 # Makefile
 
-.PHONY: help install dev up down stop init support-demo demo-ready-local deploy infra build bootstrap init-cloud smoke-test verify destroy test ingest \
+.PHONY: help install install-analytics dev dev-support-web dev-analytics-api dev-analytics-web dev-products up down stop init support-demo demo-ready-local deploy infra build bootstrap init-cloud smoke-test verify destroy test test-analytics ingest \
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
        pause-azure resume-azure import-azure \
@@ -16,6 +16,10 @@ help:
 	@echo "    make up            - Start local DBs (Docker)"
 	@echo "    make init          - Initialize local DBs, collections, indexes"
 	@echo "    make dev           - Run FastAPI server locally (hot reload)"
+	@echo "    make dev-support-web - Run the support web product on port 5173"
+	@echo "    make dev-analytics-api - Run the analytics API on port 8090"
+	@echo "    make dev-analytics-web - Run the analytics web product on port 5174"
+	@echo "    make dev-products  - Run both products as Docker deployables"
 	@echo "    make support-demo  - Validate Resolution Intelligence demo workflow"
 	@echo "    make demo-ready-local - Start local deps, seed demo data, and run demo acceptance"
 	@echo "    make ingest FILE=x - Ingest a file, directory, or --sample"
@@ -85,6 +89,9 @@ setup:
 install:
 	pip install -r services/api/requirements.txt
 
+install-analytics:
+	pip install -r services/analytics-api/requirements.txt
+
 lint:
 	ruff check
 
@@ -117,6 +124,18 @@ demo-ready-local:
 dev:
 	cd services/api && uvicorn main:app --reload --host 0.0.0.0 --port 8080 --env-file ../../.env
 
+dev-support-web:
+	cd apps/support-web && npm run dev -- --host 0.0.0.0
+
+dev-analytics-api:
+	cd services/analytics-api && PYTHONPATH=.:../.. uvicorn app.main:app --reload --host 0.0.0.0 --port 8090
+
+dev-analytics-web:
+	cd apps/analytics-web && npm run dev -- --host 0.0.0.0
+
+dev-products:
+	docker compose --profile products up --build
+
 ingest:
 	@if [ -z "$(FILE)" ]; then \
 		echo "Usage:"; \
@@ -134,7 +153,11 @@ ingest:
 	fi
 
 test:
-	pytest
+	pytest services/api/tests
+	cd services/analytics-api && PYTHONPATH=.:../.. pytest
+
+test-analytics:
+	cd services/analytics-api && PYTHONPATH=.:../.. pytest
 
 seed-context:
 	python3 scripts/seed_context_layers.py
@@ -331,5 +354,6 @@ test-data-plane:
 # Each suite runs in its own pytest session to avoid conftest.py namespace collisions
 test-all:
 	pytest services/api/tests/ -x -q && \
+	(cd services/analytics-api && PYTHONPATH=.:../.. pytest -x -q) && \
 	pytest services/control-plane/tests/ -x -q && \
 	pytest services/data-plane/tests/ -x -q

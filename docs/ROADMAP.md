@@ -1,5 +1,9 @@
 # Product Roadmap
 
+> This document tracks the original support/RAG platform roadmap. The
+> catalog-neutral enterprise analytics program is maintained separately in
+> [Enterprise Analytics Roadmap and Execution Plan](ENTERPRISE_ANALYTICS_EXECUTION_PLAN.md).
+
 ## Current State (v1.0)
 
 ### What's Production-Ready

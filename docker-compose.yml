@@ -68,6 +68,80 @@ services:
       - rag-network
     profiles: ["tools"]
 
+  # Product deployables. Start all four with:
+  # docker compose --profile products up --build
+  support-api:
+    build:
+      context: services/api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=dev
+      - DATABASE_URL=postgresql+asyncpg://ragadmin:changeme@postgres:5432/rag_db
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=ragadmin
+      - DB_PASSWORD=changeme
+      - DB_NAME=rag_db
+      - REDIS_HOST=redis
+      - QDRANT_HOST=qdrant
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+      - JWT_SECRET_KEY=local-product-secret-change-me
+      - CORS_ORIGINS=http://localhost:5173
+      - OTEL_EXPORTER=${OTEL_EXPORTER:-none}
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - neo4j
+    profiles: ["support", "products"]
+
+  support-web:
+    build:
+      context: apps/support-web
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    environment:
+      - SUPPORT_API_HOST=support-api:8080
+    depends_on:
+      - support-api
+    profiles: ["support", "products"]
+
+  analytics-api:
+    build:
+      context: .
+      dockerfile: services/analytics-api/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - ENV=dev
+      - ANALYTICS_DB_URL=postgresql://ragadmin:changeme@postgres:5432/rag_db
+      - ANALYTICS_DEMO_MODE=${ANALYTICS_DEMO_MODE:-true}
+      - ANALYTICS_LLM_MODEL=${ANALYTICS_LLM_MODEL:-gpt-4o-mini}
+      - ANALYTICS_LLM_BASE_URL=${ANALYTICS_LLM_BASE_URL:-}
+      - ANALYTICS_LLM_API_KEY=${ANALYTICS_LLM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANALYTICS_CORS_ORIGINS=http://localhost:5174
+    depends_on:
+      - postgres
+    profiles: ["analytics", "products"]
+
+  analytics-web:
+    build:
+      context: apps/analytics-web
+      dockerfile: Dockerfile
+    ports:
+      - "5174:80"
+    environment:
+      - ANALYTICS_API_HOST=analytics-api:8090
+    depends_on:
+      - analytics-api
+    profiles: ["analytics", "products"]
+
   # ─── Split-plane services ──────────────────────────────────────────────
   # Start with: docker compose --profile split up
 

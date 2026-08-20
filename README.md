@@ -1,4 +1,4 @@
-# Enterprise Agentic RAG + Data Analytics Platform
+# Compass Agentic Product Monorepo
 
 ![Architecture](https://img.shields.io/badge/Architecture-Agentic%20LangGraph-blueviolet)
 ![Orchestration](https://img.shields.io/badge/Orchestration-LangGraph%20%2B%20Ray-orange)
@@ -7,14 +7,17 @@
 ![Multimodal](https://img.shields.io/badge/Multimodal-Gemini%20Embedding-red)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 
-Turn any document corpus **and structured data** into an **intelligent, conversational knowledge base with built-in analytics** — ask questions about documents, get answers from databases with auto-generated charts, and enrich everything with business context — deployed as a fully managed SaaS or inside a customer's own cloud.
+Compass contains two independently deployable products built on explicit shared
+contracts: Resolution Intelligence for support teams and conversational
+analytics for commerce operators. Product APIs, web apps, tests, configuration,
+and release gates are isolated even though they share one repository.
 
 ### Why This Platform
 
 | Business Need | How It's Solved |
 |--------------|----------------|
-| **Ask questions, get data-driven answers** | Data Analytics Agent generates SQL from natural language, executes against Postgres, and renders tables + Vega-Lite charts in the chat UI — SQL shown for transparency |
-| **Documents + structured data in one place** | Agentic planner auto-routes queries: unstructured docs via hybrid RAG, structured data via text-to-SQL, complex queries via multi-step reasoning |
+| **Reduce repeat support work** | Support Resolution turns tickets and knowledge into cited playbooks, reviewed commands, local execution artifacts, and audit history |
+| **Ask business questions** | The standalone Analytics product generates guarded read-only SQL and renders result tables, charts, and SQL evidence |
 | **Multimodal understanding** | Gemini Embedding supports text + image retrieval — ingest PDFs with diagrams, photos, screenshots alongside text documents |
 | **Business context that makes answers useful** | 4-layer Context Architecture (glossary, metadata, code/pipeline, business rules) enriches every response with institutional knowledge |
 | **Data residency & compliance** | Control Plane / Data Plane split — customer data never leaves their cloud region; mTLS secures every cross-plane call |
@@ -24,7 +27,9 @@ Turn any document corpus **and structured data** into an **intelligent, conversa
 
 ### Technology Stack
 
-Built on **FastAPI**, **LangGraph**, **Qdrant**, **Neo4j**, **PostgreSQL**, **Ray/vLLM**, **Vega-Lite**, and **Kubernetes** — with CI/CD pipelines and full observability (OpenTelemetry, X-Ray, Azure Monitor).
+Built on **FastAPI**, **React**, **LangGraph**, **Qdrant**, **Neo4j**,
+**PostgreSQL**, **Ray/vLLM**, and **Vega-Lite**, with versioned Pydantic
+contracts under `packages/platform_contracts`.
 
 ## Quick Start (Local Development)
 
@@ -45,13 +50,24 @@ make init
 # 5. Ingest sample documents
 python3 scripts/ingest_local.py --sample
 
-# 6. Start the API server (with hot reload)
+# 6. Start the support API and web app in separate terminals
 make dev
+make dev-support-web
 ```
 
-Open the API at `http://localhost:8080/`. For the React app, start the
-frontend with `cd services/api/frontend && npm run dev -- --host 0.0.0.0`,
-then open `http://localhost:5173/`.
+Open the support product at `http://localhost:5173/` and its API at
+`http://localhost:8080/`.
+
+For analytics, load the demo dataset and start its independent deployables:
+
+```bash
+make seed-olist
+make dev-analytics-api
+make dev-analytics-web
+```
+
+Open Analytics at `http://localhost:5174/` and its API at
+`http://localhost:8090/`.
 
 | Component       | Service                 | Port        |
 |----------------|------------------------|-------------|
@@ -64,32 +80,17 @@ then open `http://localhost:5173/`.
 
 ## Architecture Overview
 
+```text
+apps/support-web       -> services/api              -> support data + retrieval
+apps/analytics-web     -> services/analytics-api    -> read-only analytics DB
+                                  |
+                                  v
+                    packages/platform_contracts
 ```
-Client  -->  Chat UI (built-in SPA)
-                |
-                v
-         NGINX Ingress (Load Balancer)
-                |
-                v
-         FastAPI API Server
-                |
-     +----------+----------+
-     v          v          v
-  LangGraph   Cache     Memory
-  Agent       (Redis)   (Postgres)
-     |
-     +-- Planner           -- intent classification (retrieve / data_query / tool_use)
-     +-- Retriever         -- hybrid vector + graph search + re-ranking
-     +-- Data Analytics    -- text-to-SQL → execute → tables + charts (optional)
-     +-- Context Enricher  -- business glossary, metadata, code/pipeline context (optional)
-     +-- Responder         -- LLM answer synthesis (docs + data + business context)
-     +-- Evaluator         -- answer quality scoring
-                |
-     +----------+---------+
-     v          v         v
-  Qdrant     Neo4j    Ray Serve
-  (vectors)  (graph)  (LLM/Embed)
-```
+
+The support API does not import, initialize, route, or stream analytics code.
+The analytics API owns SQL generation, schema grounding, safety checks, and
+chart result contracts.
 
 ### Control Plane / Data Plane (SaaS Mode)
 
@@ -119,7 +120,7 @@ For multi-tenant SaaS deployments with data residency requirements, the platform
 | `control_plane` | CP only | SaaS management: auth, routing, proxy, admin |
 | `data_plane` | DP only | Customer-deployed: query processing, single-tenant |
 
-See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-architecture) for full details.
+See [Architecture docs](docs/architecture.md#11-control-plane--data-plane-architecture) for full details.
 
 ### Key Design Principles
 
@@ -130,7 +131,8 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 - **Multi-tenant** --- per-tenant data isolation, config, rate limits, and auth
 - **Control plane / data plane** --- SaaS-ready split with data residency, mTLS, per-tenant rate limiting
 - **Context layer enrichment** --- optional 4-layer business context (glossary, metadata, code/pipeline, business rules) injected at query time
-- **Data analytics agent** --- text-to-SQL engine with safety guardrails, auto-schema discovery, tables + Vega-Lite charts in chat UI
+- **Product isolation** --- separate API/web containers, configuration, tests, and CI gates
+- **Shared contracts** --- versioned request/response models without cross-product domain imports
 - **Provider-abstraction** --- every component (LLM, storage, vector DB, secrets, reranker) is swappable via env vars
 
 ### Provider Abstraction
@@ -141,7 +143,6 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | Embeddings | `EMBED_PROVIDER` / `EMBED_MODEL` | `ray` + `nomic-embed-text`, `openai` + `text-embedding-3-small` |
 | Re-ranker | `RERANKER_PROVIDER` | `none`, `llm` (LLM-based scoring), `cross_encoder` (dedicated model) |
 | Context Layers | `CONTEXT_LAYERS_ENABLED` | `false` (off), `true` (glossary, metadata, code, business rules) |
-| Data Analytics | `DATA_ANALYTICS_ENABLED` | `false` (off), `true` (text-to-SQL with tables + charts) |
 | Vector DB | `VECTORDB_PROVIDER` | `qdrant` |
 | Graph DB | `GRAPHDB_PROVIDER` | `neo4j`, `none` (disable) |
 | Storage | `STORAGE_PROVIDER` | `s3` (AWS), `azure_blob` (Azure) |
@@ -156,6 +157,7 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | [Azure Deployment](docs/deployment-azure.md) | AKS provisioning, Workload Identity, Key Vault integration |
 | [API Reference & Chat UI](docs/api-reference.md) | Endpoints (monolith + CP/DP), streaming protocol, sample queries, Chat UI |
 | [Local Demo Readiness](docs/LOCAL_DEMO_READINESS.md) | Local-only demo checklist, acceptance gates, and caveats |
+| [Resolution Intelligence Architecture](docs/resolution-intelligence-architecture.md) | Support memory, hybrid retrieval, trust gates, action commands, and audit |
 | [Prospect Support Case Study](docs/PROSPECT_SUPPORT_CASE_STUDY.md) | Customer-facing Resolution Intelligence story for reducing repeat support tickets |
 | [Agentic AI Platform EM Case Study](docs/agentic-ai-platform-em-case-study.md) | Engineering management strategy: business case, team topology, governance, roadmap, SLOs, FinOps, and operating model |
 | [Operations Guide](docs/operations.md) | CI/CD, observability, testing, security, troubleshooting, split-plane ops |
@@ -163,20 +165,31 @@ See [Architecture docs](docs/architecture.md#9-control-plane--data-plane-archite
 | [Scaling](docs/scaling.md) | Autoscaling strategy, per-tenant data plane scaling, capacity planning |
 | [Request Flow](docs/request_flow.md) | Step-by-step query lifecycle (monolith + split-plane modes) |
 | [Roadmap](docs/ROADMAP.md) | Enterprise features, SaaS connectors, zero trust roadmap |
+| [Enterprise Analytics Execution Plan](docs/ENTERPRISE_ANALYTICS_EXECUTION_PLAN.md) | Catalog-neutral analytics architecture, phased delivery gates, and model-ready delegation plan |
+| [Enterprise Analytics Task Packets](docs/execution/enterprise-analytics/README.md) | Initial bounded assignments with file ownership, acceptance tests, and handoff rules |
 
 ## Make Commands
 
 ```
-Monolith:
+Support product:
   make install               Install Python dependencies
   make up                    Start local DBs via Docker Compose
   make init                  Initialize DBs, collections, indexes, buckets
   make dev                   Run FastAPI server locally (hot reload, port 8080)
   make demo-ready-local      Seed demo data and run local demo acceptance
-  make test                  Run monolith test suite (132 tests)
-  make seed-olist            Load Olist e-commerce dataset for data analytics
-  make seed-dataset NAME=x   Load any CSV dataset with auto-schema discovery
+  make dev-support-web       Run support web (port 5173)
+  make test                  Run support and analytics API suites
   make down                  Stop local DBs
+
+Analytics product:
+  make install-analytics     Install standalone API dependencies
+  make seed-olist            Load the commerce demo dataset
+  make dev-analytics-api     Run analytics API (port 8090)
+  make dev-analytics-web     Run analytics web (port 5174)
+  make test-analytics        Run analytics API tests
+
+All local product containers:
+  make dev-products          Build and run both products with Compose
 
 Split-Plane:
   make dev-control-plane     Run control plane locally (port 8001)
@@ -198,8 +211,13 @@ Cloud:
 
 ```
 scalable-rag-pipeline/
++-- apps/
+|   +-- support-web/              # Resolution Intelligence React product
+|   +-- analytics-web/            # Commerce analytics React product
++-- packages/
+|   +-- platform_contracts/       # Versioned cross-product API contracts
 +-- services/
-|   +-- api/                      # Monolith: FastAPI backend + Chat UI
+|   +-- api/                      # Support/RAG API (analytics-free)
 |   |   +-- app/
 |   |   |   +-- agents/           # LangGraph nodes (planner, retriever, context_enricher, responder, evaluator)
 |   |   |   +-- context/          # Context layer architecture (glossary, metadata, business rules, code context)
@@ -212,8 +230,12 @@ scalable-rag-pipeline/
 |   |   |   +-- auth/             # JWT, JWKS, multi-tenant auth
 |   |   |   +-- tenants/          # Per-tenant config & registry
 |   |   |   +-- memory/           # Postgres chat history
-|   |   +-- static/index.html     # Built-in Chat UI (dark-theme SPA)
-|   |   +-- tests/                # 132 monolith tests
+|   |   +-- static/index.html     # Legacy operational fallback UI
+|   |   +-- tests/                # Support/RAG API tests
+|   |   +-- Dockerfile
+|   +-- analytics-api/            # Standalone text-to-SQL product API
+|   |   +-- app/analytics/        # Schema, safety, engine, formatter
+|   |   +-- tests/
 |   |   +-- Dockerfile
 |   +-- control-plane/            # Control Plane: SaaS management layer
 |   |   +-- app/

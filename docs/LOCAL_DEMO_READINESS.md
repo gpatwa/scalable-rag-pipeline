@@ -15,8 +15,7 @@ Azure, AWS, or any remote environment.
 3. In another terminal, run the frontend:
 
    ```bash
-   cd services/api/frontend
-   npm run dev -- --host 0.0.0.0
+   make dev-support-web
    ```
 
 4. Run the local demo gate:
@@ -33,9 +32,9 @@ Azure, AWS, or any remote environment.
 
 ## Demo Path
 
-- Home: confirm seeded threads and pinned questions render.
+- Resolution (`/`): run the support resolution workflow.
+- Knowledge chat (`/home`): confirm seeded threads and pinned questions render.
 - Sources: confirm live source health and the GitHub demo connector show.
-- Resolution: run or inspect the support resolution workflow.
 
 ## Caveats To Say Out Loud
 
@@ -43,7 +42,8 @@ Azure, AWS, or any remote environment.
 - The GitHub connector is a demo connection with placeholder credentials.
 - Slack data is not connected in the local demo.
 - Google Drive requires the OAuth flow before a real customer demo.
-- Write-back actions are not enabled; the current demo is read-only.
+- The Trust + Execution demo persists commands, approvals, audit events, and local mock
+  artifacts. External write-back to helpdesks, KBs, CRM, or product trackers is not enabled.
 
 ## Local Verification Commands
 
@@ -54,5 +54,18 @@ pytest
 pytest services/control-plane/tests/ -x -q
 make test-data-plane
 ruff check
-cd services/api/frontend && npm run lint && npm run typecheck && npm test -- --run && npm run build:fast
+cd apps/support-web && npm run lint && npm run typecheck && npm test -- --run && npm run build:fast
 ```
+
+The analytics product has a separate local gate and is not required for the
+support prospect demo:
+
+```bash
+make seed-olist
+make dev-analytics-api
+make dev-analytics-web
+make test-analytics
+```
+
+Analytics web runs at http://localhost:5174 and analytics API at
+http://localhost:8090.

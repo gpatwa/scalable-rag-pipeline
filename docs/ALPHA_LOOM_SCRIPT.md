@@ -118,5 +118,5 @@ If asked, here are the honest gaps to acknowledge upfront:
 | Can I use my own Slack token? | Yes — ask in #compass-alpha and we'll wire it up via the Sources page. |
 | What's the difference vs ChatGPT? | Compass is enterprise-grounded — answers are tied to YOUR warehouse, docs, and SaaS. Every answer ships with citations and SQL. ChatGPT can't see your data. |
 | How does it know our metric definitions? | The Knowledge tab — glossary, business rules, KPI definitions. The agent reads these into every answer. |
-| Can it edit / write back? | Today: read-only. Action layer (open Jira tickets, update CRM under audit) is on the roadmap. |
+| Can it edit / write back? | The support demo can persist an agent command, route it through review/approval, and execute it locally with a full audit trail. That execution creates reviewable artifacts only; real Jira, CRM, helpdesk, and KB write-back adapters are not enabled yet. |
 | What about cost? | Internal cost ledger by tenant — you'll see your team's LLM usage in the admin tab once we wire it up. Not customer-facing yet. |

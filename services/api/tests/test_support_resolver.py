@@ -2,11 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 import pytest
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 class FakeSupportIndexer:

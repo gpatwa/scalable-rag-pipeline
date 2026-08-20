@@ -2,154 +2,198 @@
 
 ## Architecture Decision
 
-Resolution Intelligence is a domain-specific workflow built on the existing Compass control-plane/data-plane architecture. It should remain helpdesk-neutral, evidence-first, and safe for enterprise pilots.
+Resolution Intelligence is a domain-specific workflow built on the existing Compass
+control-plane/data-plane architecture. It remains helpdesk-neutral, evidence-first,
+tenant-scoped, and safe for enterprise pilots.
 
-The first production-quality path is:
+The current local workflow is:
 
-connectors -> canonical support data -> durable sync/index jobs -> repeat issue clustering -> hybrid retrieval -> evidence-backed playbook -> KB gap recommendation -> deflection measurement.
+connectors -> canonical support data -> durable sync/index jobs -> repeat issue
+clustering -> hybrid retrieval -> evidence-backed playbook -> agent command -> human
+approval -> local execution artifacts -> audit trail.
 
-## Current V1 Components
+External write-back is not enabled. Local execution demonstrates the trust and
+execution contract without changing Zendesk, Intercom, a knowledge base, or a product
+tracker.
+
+## Current Components
 
 Backend:
 - `support_integrations`: connector catalog and connection state for Zendesk/Intercom.
 - `support.sync`: provider sync runners.
-- `support.models`: canonical support entities for tickets, comments, articles, sync runs, index records, and jobs.
-- `support.jobs`: durable job state and worker execution.
-- `support.indexer`: support-specific vector index for tickets, comments, and articles.
+- `support.models`: canonical tickets, comments, articles, sync runs, index records,
+  durable jobs, and persisted support actions.
+- `support.jobs`: durable sync/index job state and worker execution.
+- `support.indexer`: support-specific Qdrant indexing plus vector/lexical search fusion.
+- `support.lexical`: exact-term scoring for errors, IDs, product names, and plan names.
 - `support.insights`: repeat-ticket clustering from normalized support tickets.
-- `support.resolver`: cited resolution generation from the support index.
-- `support.workflow`: repeat-cluster workflow assembly for playbook, KB gap, and deflection estimate.
+- `support.resolver`: cited resolution generation from fused retrieval results.
+- `support.workflow`: playbook, knowledge-gap, and deflection-estimate assembly.
+- `audit.manager`: tenant/user-attributed events for support operations and actions.
 
 Frontend:
-- `/support`: local operating console for demo seed, sync/index, repeat insights, playbook generation, search, and resolution.
+- `/support`: operating console for demo reset/seed, sync/index jobs, repeat insights,
+  search, cited resolution, playbook generation, action review, approval, and local
+  execution results.
 
-## Data Flow
+## Data And Execution Flow
 
 ```mermaid
 flowchart LR
-    Helpdesk[Zendesk / Intercom] --> Sync[Support sync runner]
-    Demo[Demo seed data] --> Store[(Canonical support DB)]
+    Helpdesk["Zendesk / Intercom"] --> Sync["Support sync runner"]
+    Demo["Demo seed data"] --> Store[("Canonical support DB")]
     Sync --> Store
-    Store --> Jobs[Durable sync/index jobs]
-    Jobs --> Indexer[Support indexer]
-    Indexer --> Vector[(Qdrant support index)]
-    Store --> Clusters[Repeat issue clustering]
-    Clusters --> Workflow[Resolution workflow builder]
-    Vector --> Resolver[Cited resolver]
+    Store --> Jobs["Durable sync/index jobs"]
+    Jobs --> Indexer["Support indexer"]
+    Indexer --> Vector[("Qdrant support index")]
+    Store --> Lexical["Lexical retrieval"]
+    Vector --> Fusion["Weighted result fusion"]
+    Lexical --> Fusion
+    Store --> Clusters["Repeat issue clustering"]
+    Clusters --> Workflow["Resolution workflow builder"]
+    Fusion --> Resolver["Cited resolver"]
     Resolver --> Workflow
-    Workflow --> UI[/support workflow panel]
-    Workflow --> Gaps[KB and macro gap recommendation]
-    Workflow --> ROI[Deflection estimate]
+    Workflow --> Command["Persisted agent command"]
+    Command --> Review["Human review and approval"]
+    Review --> Ready["Ready to execute"]
+    Ready --> Execute["Local mock executor"]
+    Execute --> Artifacts["Macro, KB, and product follow-up artifacts"]
+    Sync --> Audit[("Audit events")]
+    Jobs --> Audit
+    Resolver --> Audit
+    Workflow --> Audit
+    Command --> Audit
+    Review --> Audit
+    Execute --> Audit
 ```
 
 ## Domain Model
 
-V1 logical entities:
-- `IssueCluster`: repeated support issue derived from tags, subjects, categories, and ticket status mix.
-- `IssueSignature`: normalized signals that identify the issue cluster.
-- `EvidenceSource`: ticket, comment, or article chunk used to support a recommendation.
-- `ResolutionPlaybook`: agent-reviewable instructions and customer response draft.
-- `KnowledgeGap`: missing or stale macro/help-center/product guidance required to deflect repeats.
-- `DeflectionEstimate`: estimated deflectable repeat tickets in the analyzed sample with assumptions.
+Computed workflow entities:
+- `IssueCluster`: repeated issue derived from tags, subjects, categories, and status mix.
+- `IssueSignature`: normalized signals identifying the issue cluster.
+- `EvidenceSource`: ticket, comment, or article chunk supporting a recommendation.
+- `ResolutionPlaybook`: reviewable instructions and customer-response draft.
+- `KnowledgeGap`: missing or stale macro, help-center, product, or internal guidance.
+- `DeflectionEstimate`: estimated avoidable repeats and agent time, with assumptions.
 
-These are initially computed at request time. Persisting accepted playbooks and measuring before/after impact should be a follow-up milestone.
+Persisted execution entity:
+- `SupportAction`: tenant-scoped agent command containing the originating workflow,
+  review state, approver and executor identity, timestamps, notes, and execution result.
+
+Accepted playbooks are currently preserved inside `SupportAction.workflow`. A future
+pilot-quality playbook registry should add explicit corpus/index versioning and impact
+measurement.
+
+## Action State Model
+
+```mermaid
+stateDiagram-v2
+    [*] --> generated
+    generated --> needs_review
+    needs_review --> approved
+    needs_review --> rejected
+    approved --> ready_to_execute
+    ready_to_execute --> executed
+```
+
+The UI follows this review sequence. The API accepts the known statuses
+`generated`, `needs_review`, `approved`, `ready_to_execute`, `executed`, and
+`rejected`; `executed` can only be entered through the execute endpoint, and execution
+returns HTTP 409 unless the action is `ready_to_execute`.
+
+The current executor uses `mode: local_mock`. It produces reviewable macro, KB update,
+and product follow-up artifacts and explicitly records that no external system changed.
+Future integrations must preserve this state model while adding connector-specific
+permissions, idempotency keys, retries, rollback/compensation behavior, and external
+resource identifiers.
 
 ## API Surface
 
-Existing:
+Support memory and workflow:
 - `POST /api/v1/support/demo/seed`
 - `POST /api/v1/support/jobs/sync-index`
+- `GET /api/v1/support/jobs`
+- `GET /api/v1/support/jobs/summary`
+- `GET /api/v1/support/jobs/{job_id}`
+- `POST /api/v1/support/jobs/{job_id}/cancel`
+- `POST /api/v1/support/jobs/{job_id}/retry`
+- `POST /api/v1/support/sync/{provider}`
 - `POST /api/v1/support/index`
 - `GET /api/v1/support/insights/repeats`
+- `POST /api/v1/support/insights/repeats/workflow`
 - `GET /api/v1/support/search`
 - `POST /api/v1/support/resolve`
+- `GET /api/v1/support/tickets`
+- `GET /api/v1/support/sync-runs`
 
-Added for v1 workflow:
-- `POST /api/v1/support/insights/repeats/workflow`
+Trust and execution:
+- `POST /api/v1/support/actions`
+- `GET /api/v1/support/actions`
+- `DELETE /api/v1/support/actions`
+- `POST /api/v1/support/actions/{action_id}/status`
+- `POST /api/v1/support/actions/{action_id}/execute`
 
-Request shape:
+Connector management is exposed under `/api/v1/support-integrations`.
 
-```json
-{
-  "cluster_id": "tag:export|timeout",
-  "provider": "zendesk",
-  "status": null,
-  "limit": 200,
-  "min_count": 2
-}
-```
+## Evidence And Retrieval Rules
 
-Response shape:
+Current retrieval:
+- Qdrant vector search finds semantically similar ticket/article chunks.
+- Database-backed lexical search rewards exact query terms and support metadata.
+- Weighted fusion combines vector and lexical ranks and returns `vector_score`,
+  `lexical_score`, `fusion_score`, and `retrieval_source` trace fields.
+- The resolver cites the fused results used in its response.
 
-```json
-{
-  "workflow": {
-    "cluster": {},
-    "query": "How have we resolved export timeout issues?",
-    "playbook": {},
-    "knowledge_gap": {},
-    "deflection_estimate": {}
-  }
-}
-```
+Current evidence gates:
+- No matches produce low confidence and human routing.
+- Strong cited matches can produce a playbook ready for agent review.
+- Solved-ticket evidence without article evidence creates a KB/macro recommendation.
+- Article evidence with continuing repeats creates a refresh/discoverability recommendation.
+- Customer-facing drafts remain review-required.
 
-## Evidence Rules
+Still required for external automation:
+- source visibility enforcement before customer-facing text;
+- deterministic claim-to-source verification and unsupported-claim blocking;
+- cross-encoder reranking and retrieval-quality evaluation;
+- persisted corpus/index version on accepted playbooks;
+- precision@k, recall@k, citation coverage, and unsupported-claim evaluation in CI.
 
-V1 evidence-gating rules:
-- If there are no matches, confidence is low and the next action is human routing.
-- If there are cited matches and at least two strong results, the playbook can be marked ready for agent review.
-- If no article evidence exists but solved tickets exist, recommend creating a KB article or macro.
-- If article evidence exists but repeats continue, recommend refreshing the article or exposing it earlier in the support flow.
-- Customer-facing drafts remain review-required until private/public source filtering and deterministic citation verification are complete.
+## Security, Trust, And Audit
 
-Future production rules:
-- enforce public/private source visibility before drafting customer text;
-- require claim-to-source span verification;
-- block unsupported claims;
-- store accepted playbooks with corpus/index version;
-- evaluate precision@k, recall@k, citation coverage, and unsupported-claim rate in CI.
-
-## Retrieval Strategy
-
-Current local v1 uses vector retrieval for support memory. The next architecture upgrade should add:
-- lexical/BM25 retrieval for exact error strings, IDs, product names, and plan names;
-- reciprocal rank fusion or weighted hybrid ranking;
-- cross-encoder reranking;
-- retrieval trace output with vector score, lexical score, rerank score, source ID, source type, and visibility.
-
-## Security And Governance
-
-Required posture:
-- tenant-scoped storage, sync, indexing, and retrieval;
-- audit events for sync, index, resolve, and workflow generation;
-- no direct customer reply automation in v1;
-- no customer-facing output from private/internal evidence until visibility filtering is implemented;
+Current controls:
+- tenant-scoped storage, indexing, retrieval, actions, and action reset;
+- authenticated user identity recorded for creation, approval, and execution;
+- execution blocked until `ready_to_execute`;
+- audit events for sync, index, resolve, workflow generation, action creation/status/reset,
+  and execution success or failure;
+- no direct reply, KB publication, or ticket mutation in local v1;
 - control-plane/data-plane split remains the enterprise deployment direction.
 
-## Milestones
+Before real connector execution:
+- enforce role/permission policy for review, approval, and execution separately;
+- prevent an action creator from approving where customer policy requires separation;
+- validate source visibility and destination scope;
+- add idempotent connector adapters and durable execution attempts;
+- store immutable request, decision, result, and external resource identifiers;
+- support retry policy and compensating/rollback actions where the destination permits.
 
-Milestone 1: Local workflow
-- demo seed;
-- repeat clusters;
-- playbook generation;
-- KB gap recommendation;
-- deflection estimate.
+## Delivery Status
 
-Milestone 2: Retrieval quality
-- BM25/full-text search;
-- hybrid fusion;
-- reranking;
-- evidence trace.
+Completed locally:
+- demo seed and reset;
+- durable sync/index jobs;
+- repeat clusters and deflection estimate;
+- vector plus lexical retrieval fusion and trace fields;
+- cited playbook and knowledge-gap recommendation;
+- persisted agent commands;
+- review, approval, rejection, readiness, and local execution flow;
+- audit events and reviewable execution artifacts.
 
-Milestone 3: Trust gate
-- source visibility filtering;
-- deterministic citation verification;
-- unsupported-claim blocking;
-- golden eval suite.
-
-Milestone 4: Pilot readiness
+Pilot readiness still requires:
 - Zendesk sandbox validation;
 - Intercom sandbox validation;
-- accepted playbook persistence;
-- before/after repeat-ticket measurement;
-- pilot ROI report.
+- visibility filtering and deterministic citation verification;
+- stronger role/permission policy and separation of duties;
+- real connector execution adapters with idempotency and recovery;
+- before/after repeat-ticket measurement and pilot ROI reporting.

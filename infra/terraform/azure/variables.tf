@@ -79,7 +79,7 @@ variable "tavily_api_key" {
 variable "kubernetes_version" {
   description = "Kubernetes version for AKS"
   type        = string
-  default     = "1.29" # Match AWS EKS version for parity
+  default     = "1.34" # Current non-LTS AKS version used by this deployment
 }
 
 # ─── Monitoring ──────────────────────────────────────────────────────────────

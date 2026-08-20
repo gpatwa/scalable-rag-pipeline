@@ -16,10 +16,6 @@ env:
   ENV: "staging"
   LOG_LEVEL: "DEBUG"
   SUPPORT_JOB_WORKER_ENABLED: "false"
-  # Alpha: serve the new Compass SPA at root (legacy UI stays at /v1).
-  # The Dockerfile builds frontend/dist/ during image build; main.py
-  # auto-detects and mounts at /.
-  NEW_UI_ENABLED: "true"
   # Alpha CORS: open enough for the public hostname plus localhost dev
   # work. Tighten when the hostname is finalised.
   CORS_ORIGINS: "*"
@@ -45,7 +41,6 @@ env:
   #   - "Avg delivery time by month"
   #   - "Top 10 product categories by revenue"
   #   - "Cancellation rate by state"
-  DATA_ANALYTICS_ENABLED: "true"
   MCP_ENABLED: "false"  # flip to true once stakeholders add a real connector
 
   # Override K8s auto-injected service env vars (they conflict with

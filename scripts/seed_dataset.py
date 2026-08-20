@@ -597,9 +597,8 @@ Examples:
     print("\nNext steps:")
     print(f"  1. Review/edit data/{args.name}/schema_context.yaml")
     print("     (add descriptions, fix column names, define business metrics)")
-    print("  2. Set DATA_ANALYTICS_ENABLED=true in .env")
-    print(f"  3. Set ANALYTICS_DATASET={args.name} in .env (optional)")
-    print("  4. Restart: make dev")
+    print(f"  2. Configure dataset '{args.name}' in services/analytics-api")
+    print("  3. Restart the analytics API: make dev-analytics-api")
 
 
 if __name__ == "__main__":

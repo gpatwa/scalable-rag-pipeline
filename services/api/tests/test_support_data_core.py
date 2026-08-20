@@ -1,15 +1,12 @@
 # services/api/tests/test_support_data_core.py
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-os.environ.setdefault("DATA_ANALYTICS_ENABLED", "false")
 
 
 def _zendesk_raw(ticket_id: int = 42) -> dict:
