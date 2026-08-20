@@ -8,7 +8,6 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "olist"
 
 

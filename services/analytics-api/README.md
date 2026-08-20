@@ -8,6 +8,23 @@ The service depends on the public v1 models in
 `packages/platform_contracts/analytics.py`. It does not import support API
 routes, graph state, models, or connectors.
 
+## Contract Evolution
+
+The v1 route remains the current public API. `packages/platform_contracts/
+analytics_v2.py` adds a transport-only v2 outcome envelope for answers,
+clarifications, refusals, human review, and operational failures. No route has
+adopted it yet, so v1 clients remain compatible. A retirement policy will be
+set only after v2 routing, evidence persistence, and a customer migration plan
+exist.
+
+```json
+{"outcome":"answer","query_id":"q-1","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","answer":"Delivered revenue was BRL 370.00."}
+{"outcome":"clarify","query_id":"q-2","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","questions":[{"id":"period","prompt":"Which period should I use?"}]}
+{"outcome":"refuse","query_id":"q-3","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","reason_code":"unauthorized","explanation":"You are not permitted to access this dataset."}
+{"outcome":"review","query_id":"q-4","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","review_id":"review-1","risk_reasons":["uncertified metric"],"expires_at":"2026-08-21T00:00:00Z","allowed_actions":["approve","reject"]}
+{"outcome":"failed","query_id":"q-5","tenant_id":"tenant-a","user_id":"user-a","dataset":"olist","error_code":"query_timeout","message":"The warehouse did not respond in time.","retryable":true}
+```
+
 ## Local Development
 
 ```bash

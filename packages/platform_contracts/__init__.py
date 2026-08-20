@@ -6,10 +6,12 @@ from packages.platform_contracts.analytics import (
     AnalyticsQueryResponse,
     AnalyticsSchemaResponse,
 )
+from packages.platform_contracts.analytics_v2 import AnalyticsV2Response
 
 __all__ = [
     "AnalyticsHealthResponse",
     "AnalyticsQueryRequest",
     "AnalyticsQueryResponse",
     "AnalyticsSchemaResponse",
+    "AnalyticsV2Response",
 ]

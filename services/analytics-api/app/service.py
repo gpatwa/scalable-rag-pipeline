@@ -70,19 +70,19 @@ def _demo_result(query: str) -> dict:
     """Deterministic local result used only when ANALYTICS_DEMO_MODE=true."""
     query_lower = query.lower()
     if "category" in query_lower:
-        columns = ["product_category", "revenue"]
+        columns = ["product_category", "item_gmv"]
         rows = [
-            {"product_category": "health_beauty", "revenue": 1_258_681.34},
-            {"product_category": "watches_gifts", "revenue": 1_205_005.68},
-            {"product_category": "bed_bath_table", "revenue": 1_036_988.68},
-            {"product_category": "sports_leisure", "revenue": 988_048.97},
-            {"product_category": "computers_accessories", "revenue": 911_954.32},
+            {"product_category": "health_beauty", "item_gmv": 1_258_681.34},
+            {"product_category": "watches_gifts", "item_gmv": 1_205_005.68},
+            {"product_category": "bed_bath_table", "item_gmv": 1_036_988.68},
+            {"product_category": "sports_leisure", "item_gmv": 988_048.97},
+            {"product_category": "computers_accessories", "item_gmv": 911_954.32},
         ]
         sql = (
-            "SELECT p.product_category_name AS product_category, "
-            "SUM(op.payment_value) AS revenue FROM olist_products p "
-            "JOIN olist_order_items oi ON oi.product_id = p.product_id "
-            "JOIN olist_order_payments op ON op.order_id = oi.order_id "
+            "SELECT p.product_category_name AS product_category, SUM(oi.price) AS item_gmv "
+            "FROM olist_orders o JOIN olist_order_items oi ON oi.order_id = o.order_id "
+            "JOIN olist_products p ON p.product_id = oi.product_id "
+            "WHERE o.order_status = 'delivered' "
             "GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
         )
     else:

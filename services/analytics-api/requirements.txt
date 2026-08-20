@@ -6,3 +6,4 @@ sqlalchemy==2.0.25
 psycopg2-binary==2.9.10
 openai==1.10.0
 httpx==0.26.0
+sqlglot==30.17.0
