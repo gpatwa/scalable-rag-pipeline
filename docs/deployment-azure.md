@@ -276,10 +276,31 @@ curl -X POST http://localhost:8080/api/v1/context/annotations \
 ### Analytics Product
 
 Analytics now has independent API and web images under
-`services/analytics-api` and `apps/analytics-web`. The current Azure Helm chart
-deploys the support API only. Add separate analytics workloads, secrets,
-ingress, and database credentials before enabling analytics in Azure; the local
-product split does not deploy or mutate Azure resources.
+`services/analytics-api` and `apps/analytics-web`. Deploy the two workloads
+with the dedicated charts and script:
+
+```bash
+export ACR_NAME="<acr-name>"
+export RESOURCE_GROUP="<resource-group>"
+export CLUSTER_NAME="<aks-cluster>"
+export ANALYTICS_HOSTNAME="analytics.example.com"
+export ANALYTICS_API_IDENTITY_CLIENT_ID="$(terraform -chdir=infra/terraform/azure output -raw analytics_api_identity_client_id)"
+kubectl apply -f deploy/secrets/analytics-external-secret-azure.yaml
+./scripts/deploy_azure_analytics.sh
+```
+
+The script builds and pushes `compass-analytics-api` from the repository root
+and `compass-analytics-web`, then installs `analytics-api` and `analytics-web`
+Helm releases. The analytics API uses the `analytics-api-secrets` Kubernetes
+Secret populated from Key Vault; create `analytics-db-url` and
+`analytics-control-db-url` in Key Vault before rollout. The web chart proxies
+`/api` and `/health` to the internal `analytics-api:8090` service and exposes
+the configured hostname through the cluster ingress.
+
+For GitHub Actions, use the manual `Deploy Analytics to Azure` workflow. It
+requires OIDC secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+`AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AKS_CLUSTER_NAME`,
+`ACR_NAME`, `ANALYTICS_API_IDENTITY_CLIENT_ID`, and `ANALYTICS_HOSTNAME`.
 
 ### Key Vault Secrets for Features
 
@@ -296,6 +317,7 @@ product split does not deploy or mutate Azure resources.
 ```bash
 make build-azure        # Rebuild Docker image
 make deploy-api-azure   # Helm upgrade
+make deploy-analytics-azure # Build and deploy analytics API + web
 ```
 
 ---

@@ -155,6 +155,7 @@ See [Architecture docs](docs/architecture.md#11-control-plane--data-plane-archit
 | [Architecture & Design](docs/architecture.md) | System design, agentic pipeline, retrieval strategies, multi-tenancy, CP/DP split |
 | [AWS Deployment](docs/deployment-aws.md) | EKS provisioning, staging/prod environments, bootstrap, cost management |
 | [Azure Deployment](docs/deployment-azure.md) | AKS provisioning, Workload Identity, Key Vault integration |
+| [Azure Analytics Deployment](docs/deployment-azure.md#analytics-product) | Separate analytics API/web images, Helm releases, Key Vault sync, and manual workflow |
 | [API Reference & Chat UI](docs/api-reference.md) | Endpoints (monolith + CP/DP), streaming protocol, sample queries, Chat UI |
 | [Local Demo Readiness](docs/LOCAL_DEMO_READINESS.md) | Local-only demo checklist, acceptance gates, and caveats |
 | [Resolution Intelligence Architecture](docs/resolution-intelligence-architecture.md) | Support memory, hybrid retrieval, trust gates, action commands, and audit |

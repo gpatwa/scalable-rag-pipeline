@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  BarChart3,
   ChevronDown,
   Database,
   FileSearch,
@@ -173,6 +174,7 @@ export function LandingPage() {
       <Hero />
       <TrustStrip />
       <ValuePropsSection />
+      <AnalyticsSection />
       <HowItWorksSection />
       <TestimonialSection />
       <PersonasSection />
@@ -180,6 +182,56 @@ export function LandingPage() {
       <FAQSection />
       <FinalCTA />
     </PublicLayout>
+  );
+}
+
+/* ------------------------- Analytics product --------------------------- */
+
+function AnalyticsSection() {
+  return (
+    <section
+      id="analytics"
+      aria-labelledby="analytics-heading"
+      className="py-16 sm:py-20 lg:py-24 border-y border-border/40 bg-surface/30 scroll-mt-16"
+    >
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16 items-center">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-fg-muted mb-3">Compass Analytics</div>
+          <h2 id="analytics-heading" className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight leading-[1.1] max-w-3xl">
+            Turn messy business questions into governed answers.
+          </h2>
+          <p className="text-fg-secondary text-base sm:text-lg leading-relaxed mt-4 max-w-2xl">
+            Start with searchable resolution memory, then add certified metrics, typed intent, deterministic SQL, policy checks, and an evidence trail your data team can approve.
+          </p>
+          <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <Button asChild size="lg" className="h-12 text-base">
+              <Link to="/">
+                Open the governed workspace <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="h-12 text-base">
+              <a href="#book-demo">See the analytics demo</a>
+            </Button>
+          </div>
+        </div>
+        <div className="glass-strong rounded-2xl p-6 sm:p-8" aria-label="Governed analytics workflow">
+          <div className="flex items-center gap-3 pb-5 border-b border-border/60">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-accent/15 text-accent ring-1 ring-accent/30">
+              <BarChart3 className="w-5 h-5" aria-hidden="true" />
+            </div>
+            <div><div className="font-semibold">Certified analytics path</div><div className="text-sm text-fg-secondary">Every step leaves evidence</div></div>
+          </div>
+          <ol className="mt-5 space-y-4">
+            {['Select trusted context', 'Compile typed intent', 'Enforce policy and budget', 'Return answer with proof'].map((step, index) => (
+              <li key={step} className="flex items-center gap-3 text-sm">
+                <span className="w-6 h-6 rounded-full bg-accent/15 text-accent text-xs font-semibold flex items-center justify-center">{index + 1}</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
   );
 }
 

@@ -2,7 +2,7 @@
 
 .PHONY: help install install-analytics dev dev-support-web dev-analytics-api dev-analytics-web dev-products up down stop init support-demo demo-ready-local deploy infra build bootstrap init-cloud smoke-test verify destroy test test-analytics ingest \
        infra-staging bootstrap-staging deploy-staging deploy-aws \
-       deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure destroy-azure \
+       deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure deploy-analytics-azure destroy-azure \
        pause-azure resume-azure import-azure \
        verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
        setup lint format \
@@ -47,6 +47,7 @@ help:
 	@echo "    make build-azure       - Build & push Docker image to ACR"
 	@echo "    make bootstrap-azure   - Bootstrap AKS cluster (K8s resources)"
 	@echo "    make deploy-api-azure  - Helm upgrade API only (code changes)"
+	@echo "    make deploy-analytics-azure - Build and deploy analytics API + web"
 	@echo "    make pause-azure       - Pause billing: stop Postgres, delete Redis, release IPs, prune ACR, stop App Service, trim Log Analytics (~\$$19/day saved)"
 	@echo "    make resume-azure      - Resume: start Postgres + App Service back up (Redis recreated on next deploy)"
 	@echo "    make import-azure      - Import manually-created resources into Terraform state (run once)"
@@ -298,6 +299,10 @@ deploy-api-azure:
 		--set image.repository="$${ACR_NAME}.azurecr.io/rag-backend-api" \
 		--set image.tag="$${TAG}" \
 		--namespace default
+
+# Build and deploy the standalone analytics product to an existing Azure AKS cluster.
+deploy-analytics-azure:
+	./scripts/deploy_azure_analytics.sh
 
 # Import manually-created Azure resources into Terraform state (run once before first apply)
 import-azure:
