@@ -2,6 +2,27 @@
 
 Deploy the RAG platform to **Azure AKS** with PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage, and Key Vault.
 
+## Public Landing Deployment
+
+The public Compass landing page is deployed independently from AKS to Azure
+Static Web Apps. Current production endpoint:
+
+`https://red-pond-0fa9a940f.7.azurestaticapps.net`
+
+The root route rewrites to the prerendered `/welcome` landing page. Rebuild
+and publish it with:
+
+```bash
+./scripts/deploy_azure_landing.sh
+```
+
+The script obtains the Static Web Apps deployment token through Azure CLI and
+does not store it in the repository. The manual GitHub Actions workflow
+`Deploy Public Landing to Azure` provides the same path; configure the
+production variable `PUBLIC_SITE_URL` and secret
+`AZURE_STATIC_WEB_APPS_API_TOKEN` first. Add a custom domain in Azure Static
+Web Apps after DNS ownership is available.
+
 ---
 
 ## Prerequisites
