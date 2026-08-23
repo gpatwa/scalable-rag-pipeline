@@ -294,6 +294,12 @@ class SupportAction(Base):
     cluster_title = Column(String(500), nullable=False)
     command_text = Column(Text, nullable=False)
     workflow = Column(JSON, default=dict)
+    command_contract_version = Column(String(32), nullable=True)
+    command_payload = Column(JSON, nullable=True)
+    policy_status = Column(String(32), nullable=True)
+    policy_reason = Column(Text, nullable=True)
+    evidence_ids = Column(JSON, nullable=True)
+    idempotency_key = Column(String(255), nullable=True)
     review_notes = Column(Text, nullable=True)
     approved_by = Column(String(255), nullable=True)
     approved_at = Column(DateTime, nullable=True)
@@ -308,6 +314,11 @@ class SupportAction(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_support_action_tenant_idempotency",
+        ),
         Index("idx_support_action_tenant_status_created", "tenant_id", "status", "created_at"),
         Index("idx_support_action_tenant_cluster", "tenant_id", "cluster_id"),
     )

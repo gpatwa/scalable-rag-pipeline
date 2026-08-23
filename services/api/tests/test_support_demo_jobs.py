@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -302,6 +303,58 @@ class TestSupportJobManager:
 
 
 class TestSupportActionQueue:
+    @pytest.mark.asyncio
+    async def test_typed_command_lineage_is_tenant_scoped_and_idempotent(self):
+        from app.support.models import SupportAction
+
+        engine, Session = await _session()
+        try:
+            async with Session() as session:
+                first = SupportAction(
+                    id="support-action-command-a",
+                    tenant_id="tenant-a",
+                    created_by="alice",
+                    cluster_title="Export + Timeout",
+                    command_text="send customer reply",
+                    command_contract_version="support-command.v1",
+                    command_payload={"command_type": "send_customer_reply", "parameters": {"response": "Retry export"}},
+                    policy_status="requires_review",
+                    policy_reason="Customer communication requires approval",
+                    evidence_ids=["ZD-1001"],
+                    idempotency_key="resolution-command-1",
+                )
+                second = SupportAction(
+                    id="support-action-command-b",
+                    tenant_id="tenant-b",
+                    created_by="bob",
+                    cluster_title="Export + Timeout",
+                    command_text="send customer reply",
+                    idempotency_key="resolution-command-1",
+                )
+                session.add_all([first, second])
+                await session.commit()
+
+                persisted = await session.get(SupportAction, first.id)
+                assert persisted is not None
+                assert persisted.status == "generated"
+                assert persisted.command_payload["command_type"] == "send_customer_reply"
+                assert persisted.evidence_ids == ["ZD-1001"]
+
+                duplicate = SupportAction(
+                    id="support-action-command-duplicate",
+                    tenant_id="tenant-a",
+                    created_by="alice",
+                    cluster_title="Duplicate",
+                    command_text="duplicate",
+                    idempotency_key="resolution-command-1",
+                )
+                session.add(duplicate)
+                with pytest.raises(IntegrityError):
+                    await session.commit()
+                await session.rollback()
+        finally:
+            await engine.dispose()
+
     @pytest.mark.asyncio
     async def test_support_action_routes_create_list_and_update_status(self, monkeypatch):
         import app.memory.postgres as pg
