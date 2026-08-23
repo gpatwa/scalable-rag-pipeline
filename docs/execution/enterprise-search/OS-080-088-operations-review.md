@@ -21,6 +21,18 @@ receiving operator approval: TLS certificate rotation, snapshot restore timing,
 cluster throttling recovery, production SLO burn-rate alerts, and a design
 partner cutover. Azure deployment is not performed by this task.
 
+## Local OpenSearch Evidence (2026-08-23)
+
+- cluster health: green, one node, all primary shards active;
+- provider integration test: passed against OpenSearch 2.15.0;
+- golden corpus: 24 documents indexed, 12 queries evaluated;
+- lexical Recall@10: `0.7083`; MRR: `0.7500`; NDCG@10: `0.6675`;
+- ACL leaks: `0`; duplicate results: `0`;
+- generation restore drill: `24 -> 24` documents in `76.95 ms`;
+- alias rollback: `opensearch-integration-g2 -> opensearch-integration-g1` passed.
+
+This is local evidence, not a production backup or TLS certificate drill.
+
 ## Review disposition
 
 `CONDITIONALLY READY FOR LOCAL DEMO AND PILOT REVIEW`. There are no known
