@@ -42,7 +42,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'What data sources does Compass connect to?',
-    a: 'Compass speaks Postgres, Snowflake, BigQuery, and Qdrant out of the box. For SaaS apps we are rolling out MCP (Model Context Protocol) connectors — Slack, GitHub, Notion, Drive, Jira, Linear and more. Custom connectors via Airbyte or LlamaHub are supported.',
+    a: 'Compass connects to PostgreSQL, warehouses, support systems, and OpenSearch for governed lexical, vector, and hybrid retrieval. Qdrant remains a temporary local demo fixture while the enterprise search plane uses OpenSearch. SaaS connectors include Zendesk, Intercom, Slack, GitHub, Notion, Drive, Jira, and Linear.',
   },
   {
     q: 'Do answers cite their sources?',
@@ -55,6 +55,11 @@ const FAQS: { q: string; a: string }[] = [
 ];
 
 const VALUE_PROPS: { icon: LucideIcon; title: string; body: string }[] = [
+  {
+    icon: FileSearch,
+    title: 'Search resolution memory',
+    body: 'Turn historical support tickets, comments, and articles into tenant-scoped lexical, vector, and hybrid answers with citations.',
+  },
   {
     icon: MessageSquare,
     title: 'Ask in plain English',
@@ -173,6 +178,7 @@ export function LandingPage() {
     <PublicLayout>
       <Hero />
       <TrustStrip />
+      <ResolutionMemorySection />
       <ValuePropsSection />
       <AnalyticsSection />
       <HowItWorksSection />
@@ -182,6 +188,40 @@ export function LandingPage() {
       <FAQSection />
       <FinalCTA />
     </PublicLayout>
+  );
+}
+
+function ResolutionMemorySection() {
+  return (
+    <section
+      id="resolution-memory"
+      aria-labelledby="resolution-memory-heading"
+      className="py-16 sm:py-20 lg:py-24 border-b border-border/40 bg-surface/20 scroll-mt-16"
+    >
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-fg-muted mb-3">Compass Resolution Intelligence</div>
+          <h2 id="resolution-memory-heading" className="text-3xl sm:text-4xl font-semibold tracking-tight leading-[1.1] max-w-xl">
+            Make every solved ticket searchable before you automate.
+          </h2>
+          <p className="text-fg-secondary text-base sm:text-lg leading-relaxed mt-4 max-w-xl">
+            OpenSearch combines exact terms, BM25, vector similarity, and deterministic hybrid ranking so agents can find the right prior resolution quickly.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[
+            ['Ingest', 'Tickets, comments, and knowledge articles become versioned resolution memory.'],
+            ['Retrieve', 'Tenant and ACL filters apply before results reach the agent.'],
+            ['Trust', 'Citations, ranking explanations, reviewed actions, and audit evidence stay attached.'],
+          ].map(([title, body]) => (
+            <div key={title} className="border border-border/60 bg-background/70 p-5 rounded-xl">
+              <div className="font-semibold">{title}</div>
+              <p className="text-sm text-fg-secondary leading-relaxed mt-2">{body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

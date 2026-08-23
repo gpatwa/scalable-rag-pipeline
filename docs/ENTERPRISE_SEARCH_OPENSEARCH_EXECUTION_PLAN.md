@@ -14,9 +14,11 @@ through OS-079 add consented interaction events, deterministic feature
 materialization, policy-aware reranking, recommendation metrics, and guarded
 experiments. OS-080 through OS-088 add adversarial isolation tests, redacted
 audit evidence, retention/deletion helpers, SLO definitions, backup/restore
-drills, capacity guidance, and the conditional production review record. These
-milestones are locally tested with provider fakes; live OpenSearch integration
-and human production sign-off remain external evidence gates.
+drills, capacity guidance, and the conditional production review record. Local
+OpenSearch 2.15 integration evidence is complete: 24 fixture documents,
+12-query evaluation, zero ACL leaks, and alias rollback verification. Production
+TLS, provider-managed snapshots, and human production sign-off remain external
+evidence gates.
 Audience: Engineering leads, reviewers, and delegated coding models
 Scope: Agentic Search and Support Resolution Intelligence under `services/api`,
 `apps/support-web`, and their deployment assets
