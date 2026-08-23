@@ -26,7 +26,11 @@ from app.support.command_policy import PolicyOutcome, evaluate_support_command
 from app.support.resolver import SupportResolveError, support_resolver
 from app.support.store import support_data_store
 from app.support.sync import SupportSyncError, support_sync_runner
-from app.support.workflow import SupportWorkflowError, build_repeat_resolution_workflow
+from app.support.workflow import (
+    SupportWorkflowError,
+    build_repeat_resolution_workflow,
+    emit_support_interaction_event,
+)
 
 router = APIRouter()
 ADMIN_ROLES = ("admin",)
@@ -111,6 +115,9 @@ class SupportResolveRequest(BaseModel):
     provider: Optional[str] = None
     status: Optional[str] = None
     limit: int = 6
+    request_id: Optional[str] = Field(default=None, max_length=255)
+    consent_granted: bool = False
+    expires_at: Optional[datetime] = None
 
 
 class SupportCitationResponse(BaseModel):
@@ -457,6 +464,16 @@ async def update_support_action_status(
         await session.refresh(action)
 
     payload = _action_to_response(action).model_dump()
+    if body.status in {"approved", "rejected"}:
+        await emit_support_interaction_event(
+            ctx=ctx,
+            kind=InteractionKind.APPROVE if body.status == "approved" else InteractionKind.REJECT,
+            correlation_id=action.id,
+            document_id=action.id,
+            consent_granted=True,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=90),
+            metadata={"action_status": body.status},
+        )
     await _audit_action(ctx, "status", True, start, payload)
     return {"action": payload}
 
@@ -510,6 +527,15 @@ async def execute_support_action(
         await session.refresh(action)
 
     payload = _action_to_response(action).model_dump()
+    await emit_support_interaction_event(
+        ctx=ctx,
+        kind=InteractionKind.EXECUTE,
+        correlation_id=action.id,
+        document_id=action.id,
+        consent_granted=True,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=90),
+        metadata={"action_status": "executed"},
+    )
     await _audit_action(ctx, "execute", True, start, payload)
     return {"action": payload}
 
@@ -934,6 +960,16 @@ async def resolve_support_issue(
             "confidence": result["confidence"],
             "match_count": len(result["matches"]),
         },
+    )
+    correlation_id = body.request_id or f"resolution-{uuid4().hex}"
+    await emit_support_interaction_event(
+        ctx=ctx,
+        kind=InteractionKind.RESOLVE,
+        correlation_id=correlation_id,
+        document_id=f"resolution:{uuid4().hex}",
+        consent_granted=body.consent_granted,
+        expires_at=body.expires_at or datetime.now(timezone.utc) + timedelta(days=90),
+        metadata={"confidence": str(result["confidence"]), "match_count": str(len(result["matches"]))},
     )
     citations = result.get("citations", [])
     verification_status = result.get("verification_status")

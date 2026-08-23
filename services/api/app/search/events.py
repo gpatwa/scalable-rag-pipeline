@@ -18,6 +18,10 @@ class InteractionKind(str, Enum):
     ACCEPT = "accept"
     DISMISS = "dismiss"
     RESOLVE = "resolve"
+    EDIT = "edit"
+    APPROVE = "approve"
+    REJECT = "reject"
+    EXECUTE = "execute"
     FEEDBACK = "feedback"
 
 

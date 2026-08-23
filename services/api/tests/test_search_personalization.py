@@ -71,3 +71,57 @@ def test_recommendation_metrics_and_kill_switch_are_reproducible():
         tenant_id="t", principal_pseudonym="p", experiment="e", enabled=True, kill_switch=False
     )
     assert assign_variant(tenant_id="t", principal_pseudonym="p", experiment="e", enabled=True, kill_switch=True) == "control"
+
+
+@pytest.mark.asyncio
+async def test_support_feedback_event_is_redacted_and_best_effort(monkeypatch):
+    from app.auth.tenant import TenantContext
+    from app.search.events import InteractionKind
+    import app.support.workflow as workflow
+
+    captured = []
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def commit(self):
+            pass
+
+    monkeypatch.setattr("app.memory.postgres.AsyncSessionLocal", lambda: FakeSession())
+
+    async def capture(session, event):
+        captured.append(event)
+
+    monkeypatch.setattr(workflow, "persist_interaction_event", capture)
+    ctx = TenantContext(tenant_id="tenant-acme", user_id="agent-1", role="agent", permissions=[])
+    await workflow.emit_support_interaction_event(
+        ctx=ctx,
+        kind=InteractionKind.RESOLVE,
+        correlation_id="req-123",
+        document_id="resolution:abc",
+        consent_granted=True,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        metadata={"confidence": "high", "match_count": "1"},
+    )
+
+    assert captured[0].request_id == "req-123"
+    assert captured[0].tenant_id == "tenant-acme"
+    assert captured[0].metadata == {"confidence": "high", "match_count": "1"}
+    assert not hasattr(captured[0], "question")
+
+    async def fail(*args):
+        raise RuntimeError("event store unavailable")
+
+    monkeypatch.setattr(workflow, "persist_interaction_event", fail)
+    await workflow.emit_support_interaction_event(
+        ctx=ctx,
+        kind=InteractionKind.EXECUTE,
+        correlation_id="action-1",
+        document_id="action-1",
+        consent_granted=True,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
