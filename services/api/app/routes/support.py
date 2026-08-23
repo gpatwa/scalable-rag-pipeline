@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -13,6 +13,8 @@ from sqlalchemy import delete, desc, select
 from app.audit import manager as audit_mgr
 from app.auth.tenant import TenantContext, get_tenant_context
 from app.config import settings
+from app.search.events import InteractionKind, SearchInteractionEvent, pseudonymize_principal
+from app.search.persistence import persist_interaction_event
 from app.support.demo import DEMO_PROVIDER, seed_demo_data
 from app.support.indexer import SupportIndexError, support_indexer
 from app.support.insights import repeat_ticket_insights
@@ -89,6 +91,16 @@ class SupportSearchResultResponse(BaseModel):
     source_url: Optional[str]
     chunk_index: Optional[int]
     chunk_count: Optional[int]
+
+
+class SupportInteractionRequest(BaseModel):
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    kind: InteractionKind
+    document_id: Optional[str] = Field(default=None, max_length=255)
+    request_id: Optional[str] = Field(default=None, max_length=255)
+    consent_granted: bool = False
+    expires_at: Optional[datetime] = None
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class SupportResolveRequest(BaseModel):
@@ -771,6 +783,41 @@ async def search_support_resolution_index(
         "query": q,
         "limit": limit,
     }
+
+
+@router.post("/interactions", response_model=dict)
+async def record_support_search_interaction(
+    body: SupportInteractionRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    """Record an explicitly consented interaction without storing raw query text."""
+    from app.memory.postgres import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+    occurred_at = datetime.now(timezone.utc)
+    expires_at = body.expires_at or occurred_at + timedelta(days=90)
+    event = SearchInteractionEvent(
+        idempotency_key=body.idempotency_key,
+        tenant_id=ctx.tenant_id,
+        principal_pseudonym=pseudonymize_principal(
+            ctx.user_id,
+            tenant_id=ctx.tenant_id,
+            salt=settings.JWT_SECRET_KEY,
+        ),
+        purpose="support-search",
+        kind=body.kind,
+        request_id=body.request_id,
+        document_id=body.document_id,
+        occurred_at=occurred_at,
+        expires_at=expires_at,
+        consent_granted=body.consent_granted,
+        metadata=body.metadata,
+    )
+    async with AsyncSessionLocal() as session:
+        accepted = await persist_interaction_event(session, event)
+        await session.commit()
+    return {"accepted": accepted, "duplicate": not accepted and body.consent_granted}
 
 
 @router.post("/resolve", response_model=dict)

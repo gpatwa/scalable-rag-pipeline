@@ -1,8 +1,8 @@
 # Enterprise Search and Recommendation OpenSearch Execution Plan
 
-Status: Approved greenfield architecture; retrieval, rollout, and personalization through OS-079 implemented
+Status: Local implementation through OS-088 complete; production sign-off remains conditional on live evidence
 
-Current implementation checkpoint (2026-08-22): OS-001 through OS-035 are merged;
+Current implementation checkpoint (2026-08-23): OS-001 through OS-035 are merged;
 OS-036 provides a separate search worker deployable, OS-037 provides checkpointed
 backfill and dry-run commands, OS-038 provides bounded source/index reconciliation,
 OS-039 gates generation alias swaps on reconciliation results, OS-040 provides an
@@ -12,9 +12,11 @@ filtered vector retrieval, deterministic hybrid RRF, stable lexical pagination,
 bounded provider orchestration, and an opt-in support integration. OS-070
 through OS-079 add consented interaction events, deterministic feature
 materialization, policy-aware reranking, recommendation metrics, and guarded
-experiments. These milestones are locally tested with provider fakes; live
-OpenSearch integration remains gated by the later local integration and
-deployment packets.
+experiments. OS-080 through OS-088 add adversarial isolation tests, redacted
+audit evidence, retention/deletion helpers, SLO definitions, backup/restore
+drills, capacity guidance, and the conditional production review record. These
+milestones are locally tested with provider fakes; live OpenSearch integration
+and human production sign-off remain external evidence gates.
 Audience: Engineering leads, reviewers, and delegated coding models
 Scope: Agentic Search and Support Resolution Intelligence under `services/api`,
 `apps/support-web`, and their deployment assets

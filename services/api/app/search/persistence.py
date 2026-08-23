@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, UniqueConstraint, select
+from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, UniqueConstraint, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.postgres import Base
@@ -64,3 +64,16 @@ async def persist_interaction_event(session: AsyncSession, event: SearchInteract
     )
     await session.flush()
     return True
+
+
+async def delete_expired_interaction_events(session: AsyncSession, *, now: datetime | None = None) -> int:
+    current = now or datetime.now(timezone.utc)
+    result = await session.execute(delete(SearchInteractionEventRecord).where(SearchInteractionEventRecord.expires_at <= current))
+    await session.flush()
+    return int(result.rowcount or 0)
+
+
+async def delete_tenant_interaction_events(session: AsyncSession, *, tenant_id: str) -> int:
+    result = await session.execute(delete(SearchInteractionEventRecord).where(SearchInteractionEventRecord.tenant_id == tenant_id))
+    await session.flush()
+    return int(result.rowcount or 0)
