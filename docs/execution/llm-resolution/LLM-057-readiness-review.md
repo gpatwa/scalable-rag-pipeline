@@ -8,6 +8,10 @@ tests, and the support-web demo path. This review is credential-free and
 local-only. It does not deploy Azure resources, contact a live provider, or
 approve production traffic.
 
+> Historical scope note: Azure staging was deployed separately on 2026-08-23.
+> That deployment does not change this document's local-only decision or grant
+> production approval; see [`AZURE-STAGING-DEPLOYMENT-2026-08-23.md`](../azure/AZURE-STAGING-DEPLOYMENT-2026-08-23.md).
+
 ## Decision
 
 The LLM resolution intelligence program is ready for a controlled local demo.
@@ -92,7 +96,7 @@ or operational readiness.
 | TLS, backup, and restore | **No-go** | **No-go** | Platform/SRE: complete production-like TLS and backup/restore drills |
 | Load and performance | **No-go** | **No-go** | Performance owner: measure p50/p95/p99, throughput, timeouts, queue behavior, and cost under load |
 | Security and operations | **No-go** | **No-go** | Security/SRE: threat review, alerting, incident/runbook review, and formal sign-off |
-| Azure deployment | **Deferred** | **No-go by scope** | Platform: schedule only after the preceding gates; no Azure deployment is part of LLM-057 |
+| Azure deployment | **Staging deployed** | **No-go for production** | Platform: complete DNS, TLS, live OpenSearch, operational drills, and named sign-off |
 
 ## Remaining External Work
 
@@ -112,8 +116,8 @@ or operational readiness.
 5. **Security and operational sign-off:** complete threat modeling, red-team
    review, identity/ACL review, logging and redaction review, alert/runbook
    review, and named owner approval.
-6. **Azure deployment:** explicitly deferred. It is not a prerequisite for
-   this local demo review and must not be inferred from this document.
+6. **Azure production readiness:** staging is deployed separately, but DNS,
+   TLS, live OpenSearch, operational drills, and named sign-off remain open.
 
 ## Residual Risks
 
@@ -139,5 +143,4 @@ or operational readiness.
 | Performance | Execute load and tail-latency test plan | p50/p95/p99, throughput, timeout, and cost report |
 | Security/SRE | Complete adversarial review, observability/runbooks, and sign-off | Named approval with tracked residual risks |
 | Product/demo | Use only the local acceptance path for prospect demos until the production gates close | Demo script cites LLM-056 and this review; no production claim |
-| Platform | Keep Azure deployment deferred until all production gates are approved | Separate deployment decision record |
-
+| Platform | Track Azure staging separately and close production gates before approval | Separate deployment decision record |

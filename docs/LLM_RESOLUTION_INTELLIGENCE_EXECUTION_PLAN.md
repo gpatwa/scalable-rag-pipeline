@@ -1,6 +1,6 @@
 # LLM Search and Resolution Intelligence Execution Plan
 
-Status: LLM-001 through LLM-057 complete; local demo approved, production approval pending external evidence; Azure deployment deferred
+Status: LLM-001 through LLM-057 complete; local demo approved, Azure staging deployed separately, production approval pending external evidence
 
 Audience: Engineering leads, reviewers, and delegated Luna coding sessions
 
@@ -25,8 +25,9 @@ Keep deterministic components in control of:
 - action permissions, approvals, execution, and audit receipts;
 - prompt/model rollout, budget limits, and kill switches.
 
-This program depends on the completed OpenSearch work through OS-088. It does
-not deploy Azure resources or change production traffic.
+This program depends on the completed OpenSearch work through OS-088. Its
+readiness review was local-only; Azure staging was deployed separately for
+controlled validation and does not change production traffic.
 
 ## 2. Product Outcome
 

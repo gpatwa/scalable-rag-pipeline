@@ -2,6 +2,10 @@
 
 Deploy the RAG platform to **Azure AKS** with PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage, and Key Vault.
 
+The current staging deployment is recorded in
+[`docs/execution/azure/AZURE-STAGING-DEPLOYMENT-2026-08-23.md`](execution/azure/AZURE-STAGING-DEPLOYMENT-2026-08-23.md).
+It is a controlled demo deployment, not production approval.
+
 ## Public Landing Deployment
 
 The public Compass landing page is deployed independently from AKS to Azure
@@ -159,12 +163,16 @@ make bootstrap-azure
 4. **Qdrant** — vector database
 5. **Neo4j** — graph database
 6. **Ray Cluster** — head node + GPU workers
-7. **NGINX Ingress** — load balancer + TLS
+7. **NGINX Ingress** — load balancer; configure TLS before public production use
 8. **API** — FastAPI backend with Workload Identity
 
 AKS node pools use the native Azure Cluster Autoscaler configured in Terraform.
 Karpenter manifests in this repository are AWS/EKS-specific and are not installed on AKS.
 Qdrant and Neo4j are installed inside AKS with Azure Disk CSI-backed persistence.
+OpenSearch is the enterprise search target, but its Terraform module is
+provider-neutral and does not provision a managed service. Supply and validate
+an approved OpenSearch endpoint before setting the API search provider to
+OpenSearch; the current staging fallback remains Qdrant.
 
 ---
 
