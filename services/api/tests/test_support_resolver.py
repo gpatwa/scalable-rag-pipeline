@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from pydantic import ValidationError
 
 
 class FakeSupportIndexer:
@@ -75,6 +76,40 @@ def _match(score=0.91):
 
 
 class TestSupportResolver:
+    def test_support_response_requires_typed_grounding_fields(self):
+        from app.routes.support import SupportResolveResponse
+
+        response = SupportResolveResponse(
+            answer="No matching resolution.",
+            confidence="low",
+            citations=[],
+            matches=[],
+            next_action="route_to_human",
+            evidence={"verification_status": "unverified", "citation_count": 0},
+            abstention=True,
+            next_action_data={
+                "name": "route_to_human",
+                "explanation": "A support agent should review this issue.",
+            },
+        )
+
+        assert response.evidence.verification_status == "unverified"
+        assert response.abstention is True
+
+        with pytest.raises(ValidationError):
+            SupportResolveResponse(
+                answer="bad",
+                confidence="low",
+                citations=[],
+                matches=[],
+                next_action="route_to_human",
+                evidence={"verification_status": "verified", "citation_count": -1},
+                next_action_data={
+                    "name": "route_to_human",
+                    "explanation": "review",
+                },
+            )
+
     @pytest.fixture(autouse=True)
     def reset_resolution_pipeline(self):
         import app.support.resolver as resolver_mod

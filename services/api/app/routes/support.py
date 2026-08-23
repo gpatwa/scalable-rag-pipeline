@@ -120,12 +120,26 @@ class SupportCitationResponse(BaseModel):
     score: Optional[float]
 
 
+class SupportEvidenceResponse(BaseModel):
+    verification_status: str = Field(min_length=1, max_length=64)
+    citation_count: int = Field(ge=0)
+
+
+class SupportNextActionResponse(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    explanation: str = Field(min_length=1, max_length=1000)
+
+
 class SupportResolveResponse(BaseModel):
     answer: str
     confidence: str
     citations: list[SupportCitationResponse]
     matches: list[SupportSearchResultResponse]
     next_action: str
+    evidence: SupportEvidenceResponse
+    abstention: bool = False
+    explanation: Optional[str] = Field(default=None, max_length=2000)
+    next_action_data: SupportNextActionResponse
 
 
 class SupportSyncIndexJobRequest(BaseModel):
@@ -856,7 +870,29 @@ async def resolve_support_issue(
             "match_count": len(result["matches"]),
         },
     )
-    return {"resolution": SupportResolveResponse(**result).model_dump()}
+    citations = result.get("citations", [])
+    verification_status = result.get("verification_status")
+    if not isinstance(verification_status, str) or not verification_status.strip():
+        verification_status = result.get("citation_verification_status")
+    if not isinstance(verification_status, str) or not verification_status.strip():
+        verification_status = "unverified" if result.get("abstention", False) else "fallback"
+    next_action = result["next_action"]
+    explanation = result.get("explanation")
+    if explanation is not None and not isinstance(explanation, str):
+        raise HTTPException(status_code=500, detail="invalid resolution explanation")
+    response = SupportResolveResponse(
+        **result,
+        evidence={
+            "verification_status": verification_status,
+            "citation_count": len(citations),
+        },
+        explanation=explanation,
+        next_action_data={
+            "name": next_action,
+            "explanation": explanation or "Follow the recommended support workflow.",
+        },
+    )
+    return {"resolution": response.model_dump()}
 
 
 @router.get("/tickets", response_model=dict)
