@@ -9,8 +9,8 @@ def scope():
     return SearchScope(tenant_id="tenant-a", principal_id="agent", purpose="support", acl_tokens=("tenant:tenant-a",))
 
 
-def result(document_id, score, rank, explanation=None):
-    return SearchResult(document_id=document_id, tenant_id="tenant-a", source_type="kb", source_id=document_id,
+def result(document_id, score, rank, explanation=None, tenant_id="tenant-a"):
+    return SearchResult(document_id=document_id, tenant_id=tenant_id, source_type="kb", source_id=document_id,
                         title=document_id, text="evidence", score=score, rank=rank, retrieval_source=RetrievalSource.LEXICAL,
                         index_generation="g1", content_version="v1", permission_version="p1", explanation=explanation)
 
@@ -50,3 +50,35 @@ async def test_failure_is_explicit_and_does_not_stop_other_variants():
     ))
     assert output.partial and output.executed_variants == 2
     assert output.failures[0].query == "bad" and [r.document_id for r in output.results] == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_rejects_cross_tenant_results_as_partial_failure():
+    class Fake:
+        async def search(self, request):
+            return SearchResponse(
+                results=(result("foreign", 1, 1, tenant_id="tenant-other"), result("owned", 0.5, 2)),
+                index_alias="x", index_generation="g1",
+            )
+
+    output = await MultiQueryRetriever(Fake()).retrieve(plan(
+        QueryVariant(query="query", mode=QueryMode.LEXICAL, reason="r", confidence=ConfidenceLevel.HIGH),
+    ))
+    assert [item.document_id for item in output.results] == ["owned"]
+    assert output.partial
+    assert output.failures[0].error_type == "tenant_scope_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_slices_over_returning_provider_response():
+    class Fake:
+        async def search(self, request):
+            return SearchResponse(
+                results=tuple(result(str(index), 1 - index / 10, index + 1) for index in range(4)),
+                index_alias="x", index_generation="g1",
+            )
+
+    output = await MultiQueryRetriever(Fake(), per_query_result_limit=2).retrieve(plan(
+        QueryVariant(query="query", mode=QueryMode.LEXICAL, reason="r", confidence=ConfidenceLevel.HIGH),
+    ))
+    assert [item.document_id for item in output.results] == ["0", "1"]

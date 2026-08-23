@@ -73,7 +73,15 @@ class MultiQueryRetriever:
                     error_type=type(error).__name__,
                 ))
                 continue
-            for result in response.results:
+            for result in response.results[: self.per_query_result_limit]:
+                if result.tenant_id != plan.scope.tenant_id:
+                    failures.append(RetrievalFailure(
+                        variant_index=index,
+                        query=variant.query,
+                        mode=variant.mode,
+                        error_type="tenant_scope_mismatch",
+                    ))
+                    continue
                 provenance = RetrievalProvenance(
                     document_id=result.document_id, query=variant.query,
                     mode=request.mode, score=result.score, rank=result.rank,
