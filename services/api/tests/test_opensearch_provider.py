@@ -43,6 +43,8 @@ class FakeClient:
         self.closed = False
         self.info_calls = 0
         self.indices = None
+        self.bulk_calls = []
+        self.bulk_response = {"errors": False, "items": []}
 
     async def info(self):
         self.info_calls += 1
@@ -55,6 +57,10 @@ class FakeClient:
 
     async def count(self, *, index):
         return {"count": getattr(self, "count_response", 0)}
+
+    async def bulk(self, *, index, body):
+        self.bulk_calls.append({"index": index, "body": body})
+        return self.bulk_response
 
 
 @pytest.mark.asyncio
@@ -428,6 +434,92 @@ async def test_ensure_index_creates_versioned_physical_index():
     assert index_name == "support-search-v1"
     assert definition["mappings"]["properties"]["embedding"]["dimension"] == 768
     assert definition["mappings"]["_meta"]["schema_version"] == "support-search-v1"
+
+
+def _search_document(document_id: str, *, vector=(0.1, 0.2, 0.3)):
+    from app.search.models import SearchDocument
+
+    return SearchDocument(
+        document_id=document_id,
+        tenant_id="tenant-a",
+        source_type="ticket",
+        source_id=document_id,
+        provider="zendesk",
+        title="Export timeout",
+        text="Restart the export worker.",
+        metadata={"status": "open"},
+        acl_tokens=["tenant:tenant-a"],
+        vector=vector,
+        content_version="v1",
+        permission_version="acl-v1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_builds_idempotent_bulk_actions_and_deduplicates_inputs():
+    client = FakeClient()
+    client.bulk_response = {
+        "errors": False,
+        "items": [
+            {"index": {"status": 201}},
+            {"index": {"status": 200}},
+        ],
+    }
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    result = await provider.upsert(
+        [_search_document("doc-1"), _search_document("doc-1"), _search_document("doc-2")],
+        index="support-search-v1",
+    )
+
+    assert result.attempted == 2
+    assert result.succeeded == 2
+    assert result.failed == 0
+    assert len(client.bulk_calls) == 1
+    assert client.bulk_calls[0]["index"] == "support-search-v1"
+    assert [client.bulk_calls[0]["body"][i]["index"]["_id"] for i in (0, 2)] == ["doc-1", "doc-2"]
+    assert client.bulk_calls[0]["body"][1]["embedding"] == [0.1, 0.2, 0.3]
+    assert client.bulk_calls[0]["body"][1]["tenant_id"] == "tenant-a"
+
+
+@pytest.mark.asyncio
+async def test_upsert_reports_partial_failures_without_replaying_successes():
+    client = FakeClient()
+    client.bulk_response = {
+        "errors": True,
+        "items": [
+            {"index": {"status": 201}},
+            {
+                "index": {
+                    "status": 429,
+                    "error": {"type": "es_rejected_execution_exception", "reason": "busy"},
+                }
+            },
+            {
+                "index": {
+                    "status": 400,
+                    "error": {"type": "mapper_parsing_exception", "reason": "bad vector"},
+                }
+            },
+        ],
+    }
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    result = await provider.upsert(
+        [_search_document("doc-1"), _search_document("doc-2"), _search_document("doc-3")]
+    )
+
+    assert result.attempted == 3
+    assert result.succeeded == 1
+    assert result.failed == 2
+    assert [error.document_id for error in result.errors] == ["doc-2", "doc-3"]
+    assert result.errors[0].code == "throttled"
+    assert result.errors[0].retryable is True
+    assert result.errors[1].code == "mapping"
+    assert result.errors[1].retryable is False
+    assert len(client.bulk_calls) == 1
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Awaitable
 from urllib.parse import urlsplit
 
@@ -10,7 +11,8 @@ from app.config import Settings, settings
 from app.search.compatibility import MappingCompatibilityKind, classify_mapping_compatibility
 from app.search.errors import OpenSearchError, normalize_opensearch_exception
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
-from app.search.models import SearchHealth, SearchIndexSpec
+from app.search.models import BulkWriteResult, SearchDocument, SearchHealth, SearchIndexSpec, SearchWriteError
+from app.search.schema import SUPPORT_SEARCH_SCHEMA_VERSION
 
 try:
     from opensearchpy import AsyncOpenSearch
@@ -19,6 +21,13 @@ except ImportError:  # pragma: no cover - exercised by dependency-install checks
 
 
 ClientFactory = Callable[[dict[str, Any]], Any]
+
+
+class _BulkItemException(Exception):
+    def __init__(self, status_code: int | None, payload: Any):
+        super().__init__(str(payload))
+        self.status_code = status_code
+        self.info = {"error": payload} if isinstance(payload, dict) else None
 
 
 def _default_client_factory(options: dict[str, Any]) -> Any:
@@ -153,6 +162,132 @@ class OpenSearchProvider:
                 f"OpenSearch index {index_name!r} exists with incompatible mapping "
                 f"({compatibility.kind.value} drift: {reasons}); create a new generation before retrying"
             )
+
+    async def upsert(
+        self,
+        documents: Sequence[SearchDocument],
+        *,
+        index: str | None = None,
+    ) -> BulkWriteResult:
+        """Bulk-index canonical documents and preserve per-item outcomes."""
+        self._require_connected()
+        unique_documents = self._deduplicate_documents(documents)
+        if not unique_documents:
+            return BulkWriteResult(attempted=0, succeeded=0, failed=0, errors=())
+
+        target_index = index or self.config.OPENSEARCH_INDEX_ALIAS
+        body = self._bulk_body(unique_documents, target_index)
+        response = await self._with_retry(
+            "bulk_upsert",
+            lambda: self._client.bulk(index=target_index, body=body),
+        )
+        items = response.get("items", []) if isinstance(response, dict) else []
+        errors: list[SearchWriteError] = []
+        succeeded = 0
+        for position, document in enumerate(unique_documents):
+            item = items[position] if position < len(items) else None
+            result = self._bulk_item_result(item)
+            if result is None:
+                succeeded += 1
+                continue
+            errors.append(
+                SearchWriteError(
+                    document_id=document.document_id,
+                    code=result[0].code,
+                    message=str(result[1])[:2000],
+                    retryable=result[0].retryable,
+                )
+            )
+
+        succeeded = len(unique_documents) - len(errors)
+        return BulkWriteResult(
+            attempted=len(unique_documents),
+            succeeded=succeeded,
+            failed=len(errors),
+            errors=errors,
+        )
+
+    @staticmethod
+    def _deduplicate_documents(documents: Sequence[SearchDocument]) -> list[SearchDocument]:
+        unique: list[SearchDocument] = []
+        seen: set[str] = set()
+        for document in documents:
+            if document.document_id in seen:
+                continue
+            seen.add(document.document_id)
+            unique.append(document)
+        return unique
+
+    def _bulk_body(self, documents: Sequence[SearchDocument], index: str) -> list[dict[str, Any]]:
+        body: list[dict[str, Any]] = []
+        for document in documents:
+            body.append({"index": {"_index": index, "_id": document.document_id}})
+            body.append(self._document_source(document))
+        return body
+
+    @staticmethod
+    def _document_source(document: SearchDocument) -> dict[str, Any]:
+        attributes = getattr(document, "attributes", None)
+        rank_features = getattr(document, "rank_features", None)
+        canonical = f"{document.title}\n{document.text}"
+        content_hash = getattr(document, "content_hash", None) or hashlib.sha256(
+            canonical.encode("utf-8")
+        ).hexdigest()
+        source: dict[str, Any] = {
+            "schema_version": getattr(document, "schema_version", SUPPORT_SEARCH_SCHEMA_VERSION),
+            "document_id": document.document_id,
+            "tenant_id": document.tenant_id,
+            "acl_tokens": list(document.acl_tokens),
+            "source_type": document.source_type,
+            "source_id": document.source_id,
+            "provider": document.provider,
+            "title": document.title,
+            "text": document.text,
+            "source_uri": document.source_uri,
+            "created_at": _serialize_datetime(getattr(document, "created_at", None)),
+            "updated_at": _serialize_datetime(document.updated_at),
+            "content_hash": content_hash,
+            "content_version": document.content_version,
+            "permission_version": document.permission_version,
+            "embedding_model_version": document.embedding_model_version,
+            "metadata": document.metadata,
+        }
+        for field in ("status", "priority", "category", "channel", "locale", "tags"):
+            value = getattr(attributes, field, None)
+            source[field] = list(value) if field == "tags" and value is not None else value
+        for field in (
+            "freshness_score",
+            "quality_score",
+            "resolution_confidence",
+            "popularity_score",
+            "engagement_score",
+        ):
+            source[field] = float(getattr(rank_features, field, 0.0))
+        if document.vector is not None:
+            source["embedding"] = list(document.vector)
+        return source
+
+    @staticmethod
+    def _bulk_item_result(item: Any) -> tuple[OpenSearchError, str] | None:
+        if not isinstance(item, dict):
+            error = _BulkItemException(None, "missing bulk item response")
+            return normalize_opensearch_exception(error, operation="bulk_upsert"), "missing bulk item response"
+        action = next(iter(item.values()), {})
+        if not isinstance(action, dict):
+            error = _BulkItemException(None, "invalid bulk item response")
+            return normalize_opensearch_exception(error, operation="bulk_upsert"), "invalid bulk item response"
+        status = action.get("status")
+        if isinstance(status, int) and 200 <= status < 300 and "error" not in action:
+            return None
+        error_payload = action.get("error") or "bulk item failed"
+        status_code = status if isinstance(status, int) else None
+        error = _BulkItemException(status_code, error_payload)
+        normalized = normalize_opensearch_exception(error, operation="bulk_upsert")
+        if isinstance(error_payload, dict):
+            message = error_payload.get("reason") or error_payload.get("type") or str(error_payload)
+        else:
+            message = str(error_payload)
+        return normalized, message
 
     async def activate_alias(self, alias: str, index_name: str) -> None:
         """Atomically point a stable alias at a known physical generation."""
@@ -398,3 +533,11 @@ def _is_not_found(error: BaseException) -> bool:
     if getattr(meta, "status_code", None) == 404:
         return True
     return "notfound" in type(error).__name__.lower() or "not found" in str(error).lower()
+
+
+def _serialize_datetime(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
