@@ -31,6 +31,52 @@ def _metadata(value: Mapping[str, Any] | None) -> dict[str, str]:
     return result
 
 
+def _consume_task(task: asyncio.Task[Any]) -> None:
+    """Retrieve a worker exception so the event loop never reports it as orphaned."""
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+
+
+async def _execute_shadow(
+    shadow: Callable[[], Awaitable[Any]],
+    *,
+    callback: ShadowCallback | None,
+    metadata: Mapping[str, Any] | None,
+    timeout_seconds: float,
+    started: float,
+) -> None:
+    outcome = "success"
+    try:
+        await asyncio.wait_for(shadow(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        outcome = "timeout"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+    except Exception:
+        outcome = "failure"
+    finally:
+        attrs = try_build_telemetry(
+            latency=(time.perf_counter() - started) * 1000,
+            input_tokens=0,
+            output_tokens=0,
+            estimated_cost=0,
+            route="shadow",
+            stage="resolution_shadow",
+            model_version="unknown",
+            prompt_version="unknown",
+            policy_version="unknown",
+            fallback_reason=None if outcome == "success" else outcome,
+            quality={"fallbacks": int(outcome != "success")},
+        )
+        if callback is not None and attrs is not None:
+            try:
+                callback({**attrs, **_metadata(metadata), "outcome": outcome})
+            except BaseException:
+                pass
+
+
 async def run_shadow(
     primary: Callable[[], Awaitable[Any]],
     shadow: Callable[[], Awaitable[Any]],
@@ -46,45 +92,17 @@ async def run_shadow(
     if not enabled:
         return await primary()
 
-    started = time.perf_counter()
-    primary_task = asyncio.create_task(primary())
-    shadow_task = asyncio.create_task(shadow())
-    try:
-        primary_result = await primary_task
-    except BaseException:
-        shadow_task.cancel()
-        await asyncio.gather(shadow_task, return_exceptions=True)
-        raise
-
-    outcome = "success"
-    try:
-        await asyncio.wait_for(shadow_task, timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        outcome = "timeout"
-    except asyncio.CancelledError:
-        outcome = "cancelled"
-    except Exception:
-        outcome = "failure"
-    finally:
-        if not shadow_task.done():
-            shadow_task.cancel()
-            await asyncio.gather(shadow_task, return_exceptions=True)
-        attrs = try_build_telemetry(
-            latency=(time.perf_counter() - started) * 1000,
-            input_tokens=0,
-            output_tokens=0,
-            estimated_cost=0,
-            route="shadow",
-            stage="resolution_shadow",
-            model_version="unknown",
-            prompt_version="unknown",
-            policy_version="unknown",
-            fallback_reason=None if outcome == "success" else outcome,
-            quality={"fallbacks": int(outcome != "success")},
+    shadow_task = asyncio.create_task(
+        _execute_shadow(
+            shadow,
+            callback=callback,
+            metadata=metadata,
+            timeout_seconds=timeout_seconds,
+            started=time.perf_counter(),
         )
-        if callback is not None and attrs is not None:
-            callback({**attrs, **_metadata(metadata), "outcome": outcome})
-    return primary_result
+    )
+    shadow_task.add_done_callback(_consume_task)
+    return await primary()
 
 
 __all__ = ["run_shadow"]
