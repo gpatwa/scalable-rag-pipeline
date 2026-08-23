@@ -1,6 +1,6 @@
 import asyncio
 
-from app.resolution.llm_reranker import rerank_with_llm
+from app.resolution.llm_reranker import MAX_REASON_CODE_LENGTH, MAX_REASON_CODES, MAX_RESPONSE_LENGTH, rerank_with_llm
 from app.resolution.ranking import RerankCandidate, RerankRequest
 from tests.fakes.llm import ScriptedLLM
 
@@ -33,3 +33,19 @@ def test_timeout_falls_back():
     client.enqueue_timeout(.05)
     result = asyncio.run(rerank_with_llm(client, make_request(), timeout_seconds=.001))
     assert [i.score for i in result.items] == [.4, .3]
+
+
+def test_oversized_response_falls_back_before_json_parsing():
+    client = ScriptedLLM("{" + ("x" * MAX_RESPONSE_LENGTH) + "}")
+    result = asyncio.run(rerank_with_llm(client, make_request()))
+    assert [i.score for i in result.items] == [.4, .3]
+
+
+def test_oversized_or_too_many_reason_codes_falls_back():
+    for reasons in (
+        {"a": ["x" * (MAX_REASON_CODE_LENGTH + 1)], "b": []},
+        {"a": [str(i) for i in range(MAX_REASON_CODES + 1)], "b": []},
+    ):
+        output = {"scores": {"a": .2, "b": .9}, "reasons": reasons}
+        result = asyncio.run(rerank_with_llm(ScriptedLLM(output), make_request()))
+        assert [i.score for i in result.items] == [.4, .3]

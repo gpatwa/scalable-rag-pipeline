@@ -14,6 +14,9 @@ from app.resolution.safety import bound_untrusted_text
 DEFAULT_TIMEOUT_SECONDS = 2.0
 DEFAULT_TEXT_LIMIT = 1_000
 DEFAULT_TOTAL_LIMIT = 8_000
+MAX_RESPONSE_LENGTH = 8_000
+MAX_REASON_CODES = 8
+MAX_REASON_CODE_LENGTH = 64
 
 
 def _fallback(request: RerankRequest) -> RerankResult:
@@ -56,7 +59,11 @@ def _result(request: RerankRequest, output: Any) -> RerankResult:
         reason = reasons[c.document_id]
         if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 1:
             raise ValueError("invalid score")
-        if not isinstance(reason, list) or any(not isinstance(code, str) for code in reason):
+        if (
+            not isinstance(reason, list)
+            or len(reason) > MAX_REASON_CODES
+            or any(not isinstance(code, str) or len(code) > MAX_REASON_CODE_LENGTH for code in reason)
+        ):
             raise ValueError("invalid reasons")
         items.append(RerankItem(document_id=c.document_id, score=score, reason_codes=tuple(reason), source_type=c.source_type, source_id=c.source_id, index_version=c.index_version, permission_version=c.permission_version, evidence_version=c.evidence_version))
     return RerankResult(query_id=request.query_id, scope_identity=request.scope_identity, items=tuple(items)).validate_against(request)
@@ -72,6 +79,8 @@ async def rerank_with_llm(client: LLMClient, request: RerankRequest, *, timeout_
     ]
     try:
         raw = await asyncio.wait_for(client.chat_completion(messages, temperature=0.0, json_mode=True), timeout_seconds)
+        if not isinstance(raw, str) or len(raw) > MAX_RESPONSE_LENGTH:
+            return _fallback(request)
         return _result(request, extract_json(raw))
     except Exception:
         return _fallback(request)
