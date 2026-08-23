@@ -7,6 +7,7 @@ from typing import Any, Awaitable
 from urllib.parse import urlsplit
 
 from app.config import Settings, settings
+from app.search.compatibility import MappingCompatibilityKind, classify_mapping_compatibility
 from app.search.errors import OpenSearchError, normalize_opensearch_exception
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
 from app.search.models import SearchHealth, SearchIndexSpec
@@ -145,10 +146,12 @@ class OpenSearchProvider:
             lambda: self._client.indices.get_mapping(index=index_name),
         )
         existing_mapping = self._extract_mapping(existing, index_name)
-        if existing_mapping != definition["mappings"]:
+        compatibility = classify_mapping_compatibility(existing_mapping, definition["mappings"])
+        if compatibility.kind != MappingCompatibilityKind.IDENTICAL:
+            reasons = ", ".join(compatibility.reasons) or "mapping content differs"
             raise ValueError(
-                f"OpenSearch index {index_name!r} exists with incompatible mapping; "
-                "create a new generation before retrying"
+                f"OpenSearch index {index_name!r} exists with incompatible mapping "
+                f"({compatibility.kind.value} drift: {reasons}); create a new generation before retrying"
             )
 
     async def activate_alias(self, alias: str, index_name: str) -> None:
