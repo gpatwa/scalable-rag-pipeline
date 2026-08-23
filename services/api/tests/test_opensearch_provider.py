@@ -45,6 +45,8 @@ class FakeClient:
         self.indices = None
         self.bulk_calls = []
         self.bulk_response = {"errors": False, "items": []}
+        self.mget_calls = []
+        self.mget_response = {"docs": []}
 
     async def info(self):
         self.info_calls += 1
@@ -61,6 +63,10 @@ class FakeClient:
     async def bulk(self, *, index, body):
         self.bulk_calls.append({"index": index, "body": body})
         return self.bulk_response
+
+    async def mget(self, *, index, body):
+        self.mget_calls.append({"index": index, "body": body})
+        return self.mget_response
 
 
 @pytest.mark.asyncio
@@ -520,6 +526,101 @@ async def test_upsert_reports_partial_failures_without_replaying_successes():
     assert result.errors[1].code == "mapping"
     assert result.errors[1].retryable is False
     assert len(client.bulk_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_is_tenant_scoped_and_acknowledges_missing_tombstones():
+    from app.search.models import SearchScope
+
+    client = FakeClient()
+    client.mget_response = {
+        "docs": [
+            {"_id": "doc-a", "found": True, "_source": {"tenant_id": "tenant-a"}},
+            {"_id": "doc-b", "found": True, "_source": {"tenant_id": "tenant-b"}},
+            {"_id": "doc-missing", "found": False},
+        ]
+    }
+    client.bulk_response = {
+        "errors": False,
+        "items": [{"delete": {"status": 200}}, {"delete": {"status": 404}}],
+    }
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    result = await provider.delete(
+        ["doc-a", "doc-b", "doc-missing"],
+        scope=SearchScope(
+            tenant_id="tenant-a",
+            principal_id="user-1",
+            purpose="test-delete",
+            acl_tokens=["tenant:tenant-a"],
+        ),
+    )
+
+    assert result.attempted == 3
+    assert result.succeeded == 2
+    assert result.failed == 1
+    assert result.errors[0].document_id == "doc-b"
+    assert result.errors[0].code == "tenant_scope"
+    assert [item["delete"]["_id"] for item in client.bulk_calls[0]["body"]] == [
+        "doc-a",
+        "doc-missing",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_replay_is_idempotent_for_missing_document():
+    from app.search.models import SearchScope
+
+    client = FakeClient()
+    client.mget_response = {
+        "docs": [{"_id": "doc-a", "found": True, "_source": {"tenant_id": "tenant-a"}}]
+    }
+    client.bulk_response = {"errors": False, "items": [{"delete": {"status": 200}}]}
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+    scope = SearchScope(
+        tenant_id="tenant-a",
+        principal_id="user-1",
+        purpose="test-delete",
+        acl_tokens=["tenant:tenant-a"],
+    )
+
+    first = await provider.delete(["doc-a", "doc-a"], scope=scope)
+    client.mget_response = {"docs": [{"_id": "doc-a", "found": False}]}
+    client.bulk_response = {"errors": False, "items": [{"delete": {"status": 404}}]}
+    second = await provider.delete(["doc-a"], scope=scope)
+
+    assert first.succeeded == 1
+    assert second.succeeded == 1
+    assert second.failed == 0
+    assert len(client.bulk_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_fails_closed_on_incomplete_scope_lookup():
+    from app.search.models import SearchScope
+
+    client = FakeClient()
+    client.mget_response = {
+        "docs": [{"_id": "doc-a", "found": True, "_source": {"tenant_id": "tenant-a"}}]
+    }
+    client.bulk_response = {"errors": False, "items": [{"delete": {"status": 200}}]}
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+    scope = SearchScope(
+        tenant_id="tenant-a",
+        principal_id="user-1",
+        purpose="test-delete",
+        acl_tokens=["tenant:tenant-a"],
+    )
+
+    result = await provider.delete(["doc-a", "doc-unknown"], scope=scope)
+
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert result.errors[0].code == "scope_lookup"
+    assert [item["delete"]["_id"] for item in client.bulk_calls[0]["body"]] == ["doc-a"]
 
 
 @pytest.mark.asyncio

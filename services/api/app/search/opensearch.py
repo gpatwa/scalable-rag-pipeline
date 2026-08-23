@@ -11,7 +11,14 @@ from app.config import Settings, settings
 from app.search.compatibility import MappingCompatibilityKind, classify_mapping_compatibility
 from app.search.errors import OpenSearchError, normalize_opensearch_exception
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
-from app.search.models import BulkWriteResult, SearchDocument, SearchHealth, SearchIndexSpec, SearchWriteError
+from app.search.models import (
+    BulkWriteResult,
+    SearchDocument,
+    SearchHealth,
+    SearchIndexSpec,
+    SearchScope,
+    SearchWriteError,
+)
 from app.search.schema import SUPPORT_SEARCH_SCHEMA_VERSION
 
 try:
@@ -206,6 +213,120 @@ class OpenSearchProvider:
             failed=len(errors),
             errors=errors,
         )
+
+    async def delete(
+        self,
+        document_ids: Sequence[str],
+        *,
+        scope: SearchScope,
+        index: str | None = None,
+    ) -> BulkWriteResult:
+        """Delete tenant-owned documents and acknowledge missing tombstones."""
+        self._require_connected()
+        unique_ids = self._deduplicate_ids(document_ids)
+        if not unique_ids:
+            return BulkWriteResult(attempted=0, succeeded=0, failed=0, errors=())
+
+        target_index = index or self.config.OPENSEARCH_INDEX_ALIAS
+        lookup = await self._with_retry(
+            "delete_scope_lookup",
+            lambda: self._client.mget(index=target_index, body={"ids": unique_ids}),
+        )
+        lookup_docs = lookup.get("docs") if isinstance(lookup, dict) else None
+        if not isinstance(lookup_docs, list):
+            raise ValueError("OpenSearch delete scope lookup returned an invalid response")
+
+        errors: list[SearchWriteError] = []
+        eligible_ids: list[str] = []
+        lookup_by_id = {
+            lookup_doc.get("_id"): lookup_doc
+            for lookup_doc in lookup_docs
+            if isinstance(lookup_doc, dict) and isinstance(lookup_doc.get("_id"), str)
+        }
+        for document_id in unique_ids:
+            lookup_doc = lookup_by_id.get(document_id)
+            if lookup_doc is None:
+                errors.append(
+                    SearchWriteError(
+                        document_id=document_id,
+                        code="scope_lookup",
+                        message="OpenSearch did not return tenant scope metadata",
+                        retryable=True,
+                    )
+                )
+                continue
+            if not isinstance(lookup_doc, dict):
+                errors.append(self._scope_error(document_id))
+                continue
+            if lookup_doc.get("found") is False:
+                eligible_ids.append(document_id)
+                continue
+            source = lookup_doc.get("_source")
+            if not isinstance(source, dict) or source.get("tenant_id") != scope.tenant_id:
+                errors.append(self._scope_error(document_id))
+                continue
+            eligible_ids.append(document_id)
+
+        if eligible_ids:
+            response = await self._with_retry(
+                "bulk_delete",
+                lambda: self._client.bulk(
+                    index=target_index,
+                    body=[{"delete": {"_index": target_index, "_id": document_id}} for document_id in eligible_ids],
+                ),
+            )
+            items = response.get("items", []) if isinstance(response, dict) else []
+            for position, document_id in enumerate(eligible_ids):
+                item = items[position] if position < len(items) else None
+                result = self._delete_item_result(item)
+                if result is None:
+                    continue
+                errors.append(
+                    SearchWriteError(
+                        document_id=document_id,
+                        code=result[0].code,
+                        message=str(result[1])[:2000],
+                        retryable=result[0].retryable,
+                    )
+                )
+
+        return BulkWriteResult(
+            attempted=len(unique_ids),
+            succeeded=len(unique_ids) - len(errors),
+            failed=len(errors),
+            errors=errors,
+        )
+
+    @staticmethod
+    def _deduplicate_ids(document_ids: Sequence[str]) -> list[str]:
+        unique: list[str] = []
+        seen: set[str] = set()
+        for document_id in document_ids:
+            if not isinstance(document_id, str) or not document_id.strip():
+                continue
+            normalized = document_id.strip()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(normalized)
+        return unique
+
+    @staticmethod
+    def _scope_error(document_id: str) -> SearchWriteError:
+        return SearchWriteError(
+            document_id=document_id,
+            code="tenant_scope",
+            message="document is outside the requested tenant scope",
+            retryable=False,
+        )
+
+    @staticmethod
+    def _delete_item_result(item: Any) -> tuple[OpenSearchError, str] | None:
+        if isinstance(item, dict):
+            action = next(iter(item.values()), {})
+            if isinstance(action, dict) and action.get("status") == 404:
+                return None
+        return OpenSearchProvider._bulk_item_result(item)
 
     @staticmethod
     def _deduplicate_documents(documents: Sequence[SearchDocument]) -> list[SearchDocument]:
