@@ -207,6 +207,7 @@ class Settings(BaseSettings):
     SUPPORT_INTEGRATIONS_ENABLED: bool = True
     SUPPORT_CONNECTOR_TIMEOUT_SECONDS: int = 10
     SUPPORT_RESOLVE_LLM_TIMEOUT_SECONDS: float = 8.0
+    RESOLUTION_SHADOW_ENABLED: bool = False
     SUPPORT_INDEX_COLLECTION: str = "support_resolution_index"
     SUPPORT_INDEX_VERSION: str = "support-v1"
     SUPPORT_INDEX_CHUNK_CHARS: int = 1800
