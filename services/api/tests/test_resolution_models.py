@@ -154,3 +154,32 @@ def test_resolution_models_require_citations_and_reject_nested_extras():
         values = outcome.model_dump()
         values["action_proposal"] = {"description": "review", "risk": "high"}
         GroundedResolutionOutcome(**values)
+
+
+def test_grounded_resolution_allows_empty_abstention():
+    outcome = GroundedResolutionOutcome(
+        claims=[],
+        citations=[],
+        steps=[],
+        customer_response="There is not enough authorized evidence to resolve this issue.",
+        confidence="low",
+        abstention=True,
+        next_action="route_to_human",
+    )
+
+    assert outcome.claims == ()
+    assert outcome.citations == ()
+    assert outcome.steps == ()
+
+
+def test_grounded_resolution_rejects_empty_non_abstention():
+    with pytest.raises(ValidationError):
+        GroundedResolutionOutcome(
+            claims=[],
+            citations=[],
+            steps=[],
+            customer_response="A resolution is available.",
+            confidence="high",
+            abstention=False,
+            next_action="suggest_agent_response",
+        )

@@ -187,9 +187,9 @@ class ActionProposal(ResolutionModel):
 
 
 class GroundedResolutionOutcome(ResolutionModel):
-    claims: tuple[ResolutionClaim, ...] = Field(min_length=1, max_length=32)
-    citations: tuple[ResolutionCitation, ...] = Field(min_length=1, max_length=64)
-    steps: tuple[ResolutionStep, ...] = Field(min_length=1, max_length=32)
+    claims: tuple[ResolutionClaim, ...] = Field(max_length=32)
+    citations: tuple[ResolutionCitation, ...] = Field(max_length=64)
+    steps: tuple[ResolutionStep, ...] = Field(max_length=32)
     customer_response: str = Field(min_length=1, max_length=5000)
     confidence: ConfidenceLevel
     abstention: bool
@@ -202,6 +202,14 @@ class GroundedResolutionOutcome(ResolutionModel):
     _normalize_next_action = field_validator("next_action", mode="before")(
         lambda value: _normalize_text(value, "next action")
     )
+
+    @model_validator(mode="after")
+    def _require_evidence_when_not_abstaining(self) -> GroundedResolutionOutcome:
+        if not self.abstention and not (self.claims and self.citations and self.steps):
+            raise ValueError(
+                "non-abstaining outcomes require claims, citations, and steps"
+            )
+        return self
 
 
 __all__ = [
