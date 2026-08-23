@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import Settings, settings
+from app.search.errors import normalize_opensearch_exception
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
 from app.search.models import SearchHealth, SearchIndexSpec
 
@@ -52,16 +53,19 @@ class OpenSearchProvider:
 
         try:
             server_info = await self._client.info()
-        except Exception:
+        except Exception as error:
             self._connected = False
-            raise
+            raise normalize_opensearch_exception(error, operation="connect") from error
 
         self._server_info = server_info if isinstance(server_info, dict) else {}
         self._connected = True
 
     async def close(self) -> None:
         if self._client is not None:
-            await self._client.close()
+            try:
+                await self._client.close()
+            except Exception as error:
+                raise normalize_opensearch_exception(error, operation="close") from error
         self._connected = False
 
     async def health(self) -> SearchHealth:
@@ -72,7 +76,10 @@ class OpenSearchProvider:
                 details={"provider": "opensearch", "connected": False},
             )
 
-        cluster = await self._client.cluster.health()
+        try:
+            cluster = await self._client.cluster.health()
+        except Exception as error:
+            raise normalize_opensearch_exception(error, operation="health") from error
         cluster_status = str(cluster.get("status", "unknown")) if isinstance(cluster, dict) else "unknown"
         status = "ready" if cluster_status in {"green", "yellow"} else "not_ready"
         details: dict[str, Any] = {
@@ -107,10 +114,16 @@ class OpenSearchProvider:
         }
 
         if not await self._index_exists(index_name):
-            await self._client.indices.create(index=index_name, body=definition)
+            try:
+                await self._client.indices.create(index=index_name, body=definition)
+            except Exception as error:
+                raise normalize_opensearch_exception(error, operation="create_index") from error
             return
 
-        existing = await self._client.indices.get_mapping(index=index_name)
+        try:
+            existing = await self._client.indices.get_mapping(index=index_name)
+        except Exception as error:
+            raise normalize_opensearch_exception(error, operation="get_mapping") from error
         existing_mapping = self._extract_mapping(existing, index_name)
         if existing_mapping != definition["mappings"]:
             raise ValueError(
@@ -123,7 +136,10 @@ class OpenSearchProvider:
             raise RuntimeError("OpenSearch provider must be connected before index operations")
 
     async def _index_exists(self, index_name: str) -> bool:
-        response = await self._client.indices.exists(index=index_name)
+        try:
+            response = await self._client.indices.exists(index=index_name)
+        except Exception as error:
+            raise normalize_opensearch_exception(error, operation="index_exists") from error
         if isinstance(response, bool):
             return response
         body = getattr(response, "body", None)

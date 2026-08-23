@@ -90,15 +90,69 @@ async def test_connect_health_and_close_use_async_client():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error", [PermissionError("unauthorized"), TimeoutError("timed out")])
-async def test_connect_propagates_authentication_and_timeout_failures(error):
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [(PermissionError("unauthorized"), "auth"), (TimeoutError("timed out"), "timeout")],
+)
+async def test_connect_normalizes_authentication_and_timeout_failures(error, code):
+    from app.search.errors import OpenSearchError
+
     provider = OpenSearchProvider(
         config=_config(),
         client=FakeClient(info_error=error),
     )
 
-    with pytest.raises(type(error), match=str(error)):
+    with pytest.raises(OpenSearchError) as raised:
         await provider.connect()
+
+    assert raised.value.code == code
+    assert raised.value.operation == "connect"
+
+
+class StatusError(Exception):
+    def __init__(self, status_code, *, info=None):
+        super().__init__(f"status {status_code}")
+        self.status_code = status_code
+        self.info = info
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "retryable"),
+    [
+        (StatusError(401), "auth", False),
+        (
+            StatusError(400, info={"error": {"type": "mapper_parsing_exception"}}),
+            "mapping",
+            False,
+        ),
+        (StatusError(429), "throttled", True),
+        (TimeoutError("request timed out"), "timeout", True),
+        (StatusError(503), "unavailable", True),
+    ],
+)
+def test_opensearch_errors_normalize_deterministically(error, code, retryable):
+    from app.search.errors import normalize_opensearch_exception
+
+    normalized = normalize_opensearch_exception(error, operation="search")
+
+    assert normalized.code == code
+    assert normalized.retryable is retryable
+    assert normalized.operation == "search"
+    assert normalized.cause is error
+
+
+@pytest.mark.asyncio
+async def test_provider_wraps_transport_errors_with_operation_context():
+    from app.search.errors import OpenSearchError
+
+    error = StatusError(503)
+    provider = OpenSearchProvider(config=_config(), client=FakeClient(info_error=error))
+
+    with pytest.raises(OpenSearchError) as raised:
+        await provider.connect()
+
+    assert raised.value.code == "unavailable"
+    assert raised.value.operation == "connect"
 
 
 class FakeIndices:
