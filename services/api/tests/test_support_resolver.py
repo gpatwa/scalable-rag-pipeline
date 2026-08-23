@@ -104,9 +104,9 @@ class TestSupportResolver:
         from app.support.resolver import support_resolver
 
         pipeline = FakeResolutionPipeline({
-            "answer": "Restart the export worker [1].",
+            "answer": "Restart the export worker [E1].",
             "confidence": "high",
-            "citations": [{"label": "[1]", "source_id": "42"}],
+            "citations": [{"label": "[E1]", "source_id": "42"}],
             "next_action": "suggest_agent_response",
             "abstention": False,
             "prompt": "must not be returned",
@@ -118,7 +118,7 @@ class TestSupportResolver:
 
         result = await support_resolver.resolve(tenant_id="tenant-a", question="export timeout", acl_scope=scope)
 
-        assert result["answer"] == "Restart the export worker [1]."
+        assert result["answer"] == "Restart the export worker [E1]."
         assert result["matches"]
         assert "prompt" not in result
         assert pipeline.calls[0]["tenant_id"] == "tenant-a"

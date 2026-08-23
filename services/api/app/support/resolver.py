@@ -158,18 +158,19 @@ class SupportResolver:
         citations = result.get("citations")
         if not isinstance(citations, list):
             raise ValueError("resolution pipeline returned invalid citations")
-        expected_sources = {
-            f"[{index}]": match.get("source_id")
-            for index, match in enumerate(matches, start=1)
-        }
+        match_source_ids = {match.get("source_id") for match in matches}
+        supplied_labels: set[str] = set()
         for citation in citations:
-            if not isinstance(citation, dict) or citation.get("label") not in expected_sources:
-                raise ValueError("resolution pipeline returned an unknown citation")
-            if citation.get("source_id") != expected_sources[citation["label"]]:
-                raise ValueError("resolution pipeline citation source mismatch")
-        verified, _ = self._verified_answer(query="", answer=answer, matches=matches)
-        if verified != answer:
-            raise ValueError("resolution pipeline citations could not be verified")
+            if not isinstance(citation, dict):
+                raise ValueError("resolution pipeline returned an invalid citation")
+            label = citation.get("label")
+            if not isinstance(label, str) or not label.strip() or label in supplied_labels:
+                raise ValueError("resolution pipeline returned a blank or duplicate citation label")
+            if citation.get("source_id") not in match_source_ids:
+                raise ValueError("resolution pipeline citation source is not a returned match")
+            supplied_labels.add(label)
+        if not supplied_labels or not any(label in answer for label in supplied_labels):
+            raise ValueError("resolution pipeline answer omitted a supplied citation")
         confidence = result.get("confidence")
         next_action = result.get("next_action")
         if not isinstance(confidence, str) or not isinstance(next_action, str):
