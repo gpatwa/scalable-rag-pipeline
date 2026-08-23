@@ -43,6 +43,16 @@ class FakeSearchClient:
         return self.response
 
 
+class SequenceSearchClient(FakeSearchClient):
+    def __init__(self, responses):
+        super().__init__({})
+        self.responses = list(responses)
+
+    async def search(self, *, index, body):
+        self.search_calls.append({"index": index, "body": body})
+        return self.responses.pop(0)
+
+
 def _hit(
     document_id="acme-ticket-1001",
     *,
@@ -147,15 +157,102 @@ async def test_lexical_normalization_drops_cross_tenant_and_acl_inaccessible_hit
 
 
 @pytest.mark.asyncio
-async def test_lexical_provider_rejects_unimplemented_modes_and_cursor():
+async def test_provider_requires_query_vector_for_vector_modes_and_accepts_cursor():
     from app.search.models import SearchMode, SearchRequest
 
     provider = OpenSearchProvider(config=_config(), client=FakeSearchClient({}))
     await provider.connect()
 
-    with pytest.raises(NotImplementedError, match="mode='lexical'"):
+    with pytest.raises(ValueError, match="requires query_vector"):
         await provider.search(SearchRequest(text="export", scope=_scope(), mode=SearchMode.HYBRID))
-    with pytest.raises(NotImplementedError, match="OS-045"):
-        await provider.search(
-            SearchRequest(text="export", scope=_scope(), mode=SearchMode.LEXICAL, cursor="cursor-1")
+
+
+@pytest.mark.asyncio
+async def test_vector_query_compiles_knn_filter_and_normalizes_result():
+    from app.search.models import SearchMode, SearchRequest
+
+    client = FakeSearchClient({"hits": {"total": {"value": 1}, "hits": [_hit(score=0.91)]}})
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    response = await provider.search(
+        SearchRequest(text="export", scope=_scope(), mode=SearchMode.VECTOR, query_vector=[0.1, 0.2])
+    )
+
+    assert response.results[0].retrieval_source.value == "vector"
+    assert response.results[0].vector_score == 0.91
+    body = client.search_calls[0]["body"]
+    assert body["query"]["knn"]["embedding"]["vector"] == [0.1, 0.2]
+    assert {"term": {"tenant_id": "tenant-acme"}} in body["query"]["knn"]["embedding"]["filter"]["bool"]["filter"]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_query_fuses_deterministically_and_paginates_lexical_results():
+    from app.search.models import RetrievalSource, SearchMode, SearchRequest
+
+    lexical_response = {
+        "hits": {
+            "total": {"value": 2},
+            "hits": [
+                {**_hit("doc-a", score=9.0), "sort": [9.0, "doc-a"]},
+                {**_hit("doc-b", score=8.0), "sort": [8.0, "doc-b"]},
+            ],
+        }
+    }
+    vector_response = {
+        "hits": {
+            "total": {"value": 2},
+            "hits": [
+                {**_hit("doc-b", score=0.95), "sort": [0.95, "doc-b"]},
+                {**_hit("doc-c", score=0.90), "sort": [0.90, "doc-c"]},
+            ],
+        }
+    }
+    client = SequenceSearchClient([lexical_response, vector_response])
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    response = await provider.search(
+        SearchRequest(
+            text="export",
+            scope=_scope(),
+            mode=SearchMode.HYBRID,
+            query_vector=[0.1, 0.2],
+            limit=2,
         )
+    )
+
+    assert [result.document_id for result in response.results] == ["doc-b", "doc-a"]
+    assert all(result.retrieval_source == RetrievalSource.HYBRID for result in response.results)
+    assert response.results[0].fusion_score > response.results[1].fusion_score
+    assert response.total == 3
+    assert client.search_calls[0]["body"]["size"] == 50
+    assert client.search_calls[1]["body"]["query"]["knn"]
+
+
+@pytest.mark.asyncio
+async def test_lexical_cursor_is_encoded_and_sent_as_search_after():
+    from app.search.models import SearchMode, SearchRequest
+
+    first_client = FakeSearchClient(
+        {"hits": {"total": {"value": 2}, "hits": [{**_hit(), "sort": [8.25, "acme-ticket-1001"]}]}}
+    )
+    provider = OpenSearchProvider(config=_config(), client=first_client)
+    await provider.connect()
+    first = await provider.search(
+        SearchRequest(text="export", scope=_scope(), mode=SearchMode.LEXICAL, limit=1)
+    )
+    assert first.next_cursor
+
+    second_client = FakeSearchClient({"hits": {"total": {"value": 1}, "hits": []}})
+    provider = OpenSearchProvider(config=_config(), client=second_client)
+    await provider.connect()
+    await provider.search(
+        SearchRequest(
+            text="export",
+            scope=_scope(),
+            mode=SearchMode.LEXICAL,
+            cursor=first.next_cursor,
+        )
+    )
+    assert second_client.search_calls[0]["body"]["search_after"] == [8.25, "acme-ticket-1001"]

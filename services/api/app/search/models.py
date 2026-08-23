@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
+from math import isfinite
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -99,6 +100,7 @@ class SearchRequest(SearchModel):
     limit: int = Field(default=10, ge=1, le=100)
     cursor: str | None = Field(default=None, max_length=4096)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    query_vector: tuple[float, ...] | None = None
     request_id: str | None = Field(default=None, max_length=255)
 
     @field_validator("text")
@@ -108,6 +110,18 @@ class SearchRequest(SearchModel):
         if not normalized:
             raise ValueError("search text cannot be blank")
         return normalized
+
+    @field_validator("query_vector", mode="before")
+    @classmethod
+    def _normalize_query_vector(cls, value: Any) -> tuple[float, ...] | None:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)) or not value:
+            raise ValueError("query_vector must be a non-empty sequence")
+        vector = tuple(float(item) for item in value)
+        if not all(isfinite(item) for item in vector):
+            raise ValueError("query_vector values must be finite")
+        return vector
 
 
 class RankingExplanation(SearchModel):

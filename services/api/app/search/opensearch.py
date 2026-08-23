@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import json
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, Awaitable
@@ -305,18 +307,28 @@ class OpenSearchProvider:
         )
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """Execute a scoped BM25 lexical search and normalize safe results."""
+        """Execute lexical, vector, or deterministic hybrid retrieval."""
         self._require_connected()
-        if request.mode != SearchMode.LEXICAL:
-            raise NotImplementedError("OpenSearch BM25 search currently requires mode='lexical'")
+        if request.mode == SearchMode.LEXICAL:
+            return await self._search_lexical(request)
+        if request.mode == SearchMode.VECTOR:
+            return await self._search_vector(request)
+        if request.mode == SearchMode.HYBRID:
+            return await self._search_hybrid(request)
+        raise ValueError(f"unsupported search mode: {request.mode}")
+
+    async def _search_lexical(self, request: SearchRequest) -> SearchResponse:
         if request.cursor is not None:
-            raise NotImplementedError("search cursors are added by OS-045")
+            search_after = _decode_cursor(request.cursor)
+        else:
+            search_after = None
 
         body: dict[str, Any] = {
             "size": request.limit,
             "track_total_hits": True,
             "query": build_lexical_query(request),
             "_source": list(_LEXICAL_SOURCE_FIELDS),
+            "sort": [{"_score": "desc"}, {"document_id": "asc"}],
             "highlight": {
                 "pre_tags": ["<em>"],
                 "post_tags": ["</em>"],
@@ -326,6 +338,8 @@ class OpenSearchProvider:
                 },
             },
         }
+        if search_after is not None:
+            body["search_after"] = search_after
         if request.score_threshold is not None:
             body["min_score"] = request.score_threshold
 
@@ -346,6 +360,136 @@ class OpenSearchProvider:
         return SearchResponse(
             results=tuple(results),
             total=total,
+            next_cursor=_next_cursor(hits, request.limit),
+            index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
+            index_generation=generation,
+        )
+
+    async def _search_vector(self, request: SearchRequest) -> SearchResponse:
+        if request.query_vector is None:
+            raise ValueError("vector search requires query_vector")
+        expected_dimensions = getattr(self.config, "OPENSEARCH_VECTOR_DIMENSIONS", None)
+        if expected_dimensions and len(request.query_vector) != expected_dimensions:
+            raise ValueError(
+                f"query_vector dimension {len(request.query_vector)} does not match configured "
+                f"dimension {expected_dimensions}"
+            )
+        if request.cursor is not None:
+            raise NotImplementedError("vector search cursors require a provider-specific k-NN page")
+
+        body: dict[str, Any] = {
+            "size": request.limit,
+            "track_total_hits": True,
+            "query": {
+                "knn": {
+                    "embedding": {
+                        "vector": list(request.query_vector),
+                        "k": request.limit,
+                        "filter": compile_request_filters(request),
+                    }
+                }
+            },
+            "_source": list(_LEXICAL_SOURCE_FIELDS),
+        }
+        if request.score_threshold is not None:
+            body["min_score"] = request.score_threshold
+        response = await self._with_retry(
+            "vector_search",
+            lambda: self._client.search(index=self.config.OPENSEARCH_INDEX_ALIAS, body=body),
+        )
+        return self._response_from_hits(response, request, RetrievalSource.VECTOR)
+
+    async def _search_hybrid(self, request: SearchRequest) -> SearchResponse:
+        if request.query_vector is None:
+            raise ValueError("hybrid search requires query_vector")
+        candidate_limit = min(max(request.limit * 10, 50), 1000)
+        lexical_request = request.model_copy(
+            update={"mode": SearchMode.LEXICAL, "limit": candidate_limit, "cursor": None}
+        )
+        vector_request = request.model_copy(
+            update={"mode": SearchMode.VECTOR, "limit": candidate_limit, "cursor": None}
+        )
+        lexical = await self._search_lexical(lexical_request)
+        vector = await self._search_vector(vector_request)
+        lexical_by_id = {result.document_id: result for result in lexical.results}
+        vector_by_id = {result.document_id: result for result in vector.results}
+        fused: list[SearchResult] = []
+        rrf_k = float(getattr(self.config, "OPENSEARCH_RRF_K", 60.0))
+        for document_id in sorted(set(lexical_by_id) | set(vector_by_id)):
+            lexical_result = lexical_by_id.get(document_id)
+            vector_result = vector_by_id.get(document_id)
+            lexical_rank = lexical_result.rank if lexical_result else None
+            vector_rank = vector_result.rank if vector_result else None
+            rrf_score = 0.0
+            if lexical_rank is not None:
+                rrf_score += 1.0 / (rrf_k + lexical_rank)
+            if vector_rank is not None:
+                rrf_score += 1.0 / (rrf_k + vector_rank)
+            base = lexical_result or vector_result
+            assert base is not None
+            sources = tuple(
+                source
+                for source in (RetrievalSource.LEXICAL, RetrievalSource.VECTOR)
+                if (source == RetrievalSource.LEXICAL and lexical_result)
+                or (source == RetrievalSource.VECTOR and vector_result)
+            )
+            fused.append(
+                base.model_copy(
+                    update={
+                        "score": rrf_score,
+                        "retrieval_source": RetrievalSource.HYBRID,
+                        "lexical_score": lexical_result.lexical_score if lexical_result else None,
+                        "vector_score": (
+                            vector_result.vector_score
+                            if vector_result and vector_result.vector_score is not None
+                            else vector_result.score if vector_result else None
+                        ),
+                        "fusion_score": rrf_score,
+                        "explanation": RankingExplanation(
+                            sources=sources,
+                            components={
+                                "rrf": rrf_score,
+                                "lexical": lexical_result.lexical_score if lexical_result else 0.0,
+                                "vector": vector_result.vector_score if vector_result else 0.0,
+                            },
+                            notes=("Deterministic reciprocal-rank fusion",),
+                        ),
+                    }
+                )
+            )
+        fused.sort(key=lambda result: (-result.fusion_score, result.document_id))
+        selected = [result.model_copy(update={"rank": rank}) for rank, result in enumerate(fused[: request.limit], 1)]
+        generation = next((result.index_generation for result in selected), self.config.OPENSEARCH_INDEX_ALIAS)
+        return SearchResponse(
+            results=tuple(selected),
+            total=len(fused),
+            index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
+            index_generation=generation,
+        )
+
+    def _response_from_hits(
+        self,
+        response: Any,
+        request: SearchRequest,
+        retrieval_source: RetrievalSource,
+    ) -> SearchResponse:
+        hits_payload = response.get("hits", {}) if isinstance(response, dict) else {}
+        hits = hits_payload.get("hits", []) if isinstance(hits_payload, dict) else []
+        total = _total_hits(hits_payload)
+        results: list[SearchResult] = []
+        for rank, hit in enumerate(hits if isinstance(hits, list) else [], start=1):
+            result = self._normalize_lexical_hit(
+                hit,
+                request.scope,
+                rank,
+                retrieval_source=retrieval_source,
+            )
+            if result is not None:
+                results.append(result)
+        generation = next((result.index_generation for result in results), self.config.OPENSEARCH_INDEX_ALIAS)
+        return SearchResponse(
+            results=tuple(results),
+            total=total,
             index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
             index_generation=generation,
         )
@@ -355,6 +499,8 @@ class OpenSearchProvider:
         hit: Any,
         scope: SearchScope,
         rank: int,
+        *,
+        retrieval_source: RetrievalSource = RetrievalSource.LEXICAL,
     ) -> SearchResult | None:
         if not isinstance(hit, dict):
             return None
@@ -380,9 +526,13 @@ class OpenSearchProvider:
         metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
         highlights = _normalize_highlights(hit.get("highlight"))
         explanation = RankingExplanation(
-            sources=(RetrievalSource.LEXICAL,),
-            components={"bm25": score},
-            notes=("OpenSearch BM25 lexical retrieval",),
+            sources=(retrieval_source,),
+            components={"bm25" if retrieval_source == RetrievalSource.LEXICAL else "vector": score},
+            notes=(
+                "OpenSearch BM25 lexical retrieval"
+                if retrieval_source == RetrievalSource.LEXICAL
+                else "OpenSearch filtered k-NN retrieval",
+            ),
         )
         return SearchResult(
             document_id=document_id,
@@ -394,8 +544,9 @@ class OpenSearchProvider:
             metadata=metadata,
             score=max(score, 0.0),
             rank=rank,
-            retrieval_source=RetrievalSource.LEXICAL,
-            lexical_score=max(score, 0.0),
+            retrieval_source=retrieval_source,
+            lexical_score=max(score, 0.0) if retrieval_source == RetrievalSource.LEXICAL else None,
+            vector_score=max(score, 0.0) if retrieval_source == RetrievalSource.VECTOR else None,
             highlights=highlights,
             source_uri=_text_value(source.get("source_uri")) or None,
             index_generation=generation,
@@ -866,6 +1017,36 @@ def _total_hits(hits_payload: Any) -> int:
     if isinstance(total, dict):
         total = total.get("value", 0)
     return max(int(total), 0) if isinstance(total, (int, float)) else 0
+
+
+def _encode_cursor(sort_values: Any) -> str:
+    if not isinstance(sort_values, list) or not sort_values or len(sort_values) > 8:
+        raise ValueError("OpenSearch did not return a usable pagination sort key")
+    payload = json.dumps(sort_values, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> list[Any]:
+    if not cursor or len(cursor) > 4096:
+        raise ValueError("search cursor is invalid")
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = base64.urlsafe_b64decode((cursor + padding).encode("ascii"))
+        value = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("search cursor is invalid") from error
+    if not isinstance(value, list) or not value or len(value) > 8:
+        raise ValueError("search cursor is invalid")
+    return value
+
+
+def _next_cursor(hits: Any, limit: int) -> str | None:
+    if not isinstance(hits, list) or len(hits) < limit or not hits:
+        return None
+    last_hit = hits[-1]
+    if not isinstance(last_hit, dict):
+        return None
+    return _encode_cursor(last_hit.get("sort"))
 
 
 def _source_is_visible(source: dict[str, Any], scope: SearchScope) -> bool:
