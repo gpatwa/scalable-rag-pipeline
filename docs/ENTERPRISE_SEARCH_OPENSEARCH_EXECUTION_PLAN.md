@@ -1,12 +1,13 @@
 # Enterprise Search and Recommendation OpenSearch Execution Plan
 
-Status: Approved greenfield architecture; query security through OS-040 implemented
+Status: Approved greenfield architecture; lexical query through OS-041 implemented
 
 Current implementation checkpoint (2026-08-22): OS-001 through OS-035 are merged;
 OS-036 provides a separate search worker deployable, OS-037 provides checkpointed
 backfill and dry-run commands, OS-038 provides bounded source/index reconciliation,
-OS-039 gates generation alias swaps on reconciliation results, and OS-040 provides
-an allowlisted tenant/ACL filter compiler. These milestones are locally tested with
+OS-039 gates generation alias swaps on reconciliation results, OS-040 provides an
+allowlisted tenant/ACL filter compiler, and OS-041 provides scoped BM25 lexical
+retrieval with exact-ID and phrase boosts. These milestones are locally tested with
 provider fakes; live OpenSearch integration remains gated by the later local
 integration and deployment packets.
 Audience: Engineering leads, reviewers, and delegated coding models

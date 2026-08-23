@@ -10,12 +10,19 @@ from urllib.parse import urlsplit
 from app.config import Settings, settings
 from app.search.compatibility import MappingCompatibilityKind, classify_mapping_compatibility
 from app.search.errors import OpenSearchError, normalize_opensearch_exception
+from app.search.filters import compile_request_filters
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
 from app.search.models import (
     BulkWriteResult,
+    RankingExplanation,
+    RetrievalSource,
     SearchDocument,
     SearchHealth,
     SearchIndexSpec,
+    SearchMode,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
     SearchScope,
     SearchWriteError,
 )
@@ -295,6 +302,107 @@ class OpenSearchProvider:
             succeeded=len(unique_ids) - len(errors),
             failed=len(errors),
             errors=errors,
+        )
+
+    async def search(self, request: SearchRequest) -> SearchResponse:
+        """Execute a scoped BM25 lexical search and normalize safe results."""
+        self._require_connected()
+        if request.mode != SearchMode.LEXICAL:
+            raise NotImplementedError("OpenSearch BM25 search currently requires mode='lexical'")
+        if request.cursor is not None:
+            raise NotImplementedError("search cursors are added by OS-045")
+
+        body: dict[str, Any] = {
+            "size": request.limit,
+            "track_total_hits": True,
+            "query": build_lexical_query(request),
+            "_source": list(_LEXICAL_SOURCE_FIELDS),
+            "highlight": {
+                "pre_tags": ["<em>"],
+                "post_tags": ["</em>"],
+                "fields": {
+                    "title": {"number_of_fragments": 1},
+                    "text": {"fragment_size": 240, "number_of_fragments": 3},
+                },
+            },
+        }
+        if request.score_threshold is not None:
+            body["min_score"] = request.score_threshold
+
+        response = await self._with_retry(
+            "search",
+            lambda: self._client.search(index=self.config.OPENSEARCH_INDEX_ALIAS, body=body),
+        )
+        hits_payload = response.get("hits", {}) if isinstance(response, dict) else {}
+        hits = hits_payload.get("hits", []) if isinstance(hits_payload, dict) else []
+        total = _total_hits(hits_payload)
+        results: list[SearchResult] = []
+        for rank, hit in enumerate(hits if isinstance(hits, list) else [], start=1):
+            result = self._normalize_lexical_hit(hit, request.scope, rank)
+            if result is not None:
+                results.append(result)
+
+        generation = next((result.index_generation for result in results), self.config.OPENSEARCH_INDEX_ALIAS)
+        return SearchResponse(
+            results=tuple(results),
+            total=total,
+            index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
+            index_generation=generation,
+        )
+
+    def _normalize_lexical_hit(
+        self,
+        hit: Any,
+        scope: SearchScope,
+        rank: int,
+    ) -> SearchResult | None:
+        if not isinstance(hit, dict):
+            return None
+        source = hit.get("_source")
+        if not isinstance(source, dict) or not _source_is_visible(source, scope):
+            return None
+        document_id = _text_value(source.get("document_id") or hit.get("_id"))
+        tenant_id = _text_value(source.get("tenant_id"))
+        source_type = _text_value(source.get("source_type"))
+        source_id = _text_value(source.get("source_id"))
+        title = _text_value(source.get("title"))
+        text = _text_value(source.get("text"))
+        if not all((document_id, tenant_id, source_type, source_id, title, text)):
+            return None
+        raw_score = hit.get("_score", 0.0)
+        score = float(raw_score) if isinstance(raw_score, (int, float)) else 0.0
+        generation = _text_value(hit.get("_index")) or self.config.OPENSEARCH_INDEX_ALIAS
+        content_version = _text_value(source.get("content_version")) or "unknown"
+        permission_version = _text_value(source.get("permission_version")) or "unknown"
+        embedding_model_version = source.get("embedding_model_version")
+        if embedding_model_version is not None:
+            embedding_model_version = _text_value(embedding_model_version) or None
+        metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+        highlights = _normalize_highlights(hit.get("highlight"))
+        explanation = RankingExplanation(
+            sources=(RetrievalSource.LEXICAL,),
+            components={"bm25": score},
+            notes=("OpenSearch BM25 lexical retrieval",),
+        )
+        return SearchResult(
+            document_id=document_id,
+            tenant_id=tenant_id,
+            source_type=source_type,
+            source_id=source_id,
+            title=title,
+            text=text,
+            metadata=metadata,
+            score=max(score, 0.0),
+            rank=rank,
+            retrieval_source=RetrievalSource.LEXICAL,
+            lexical_score=max(score, 0.0),
+            highlights=highlights,
+            source_uri=_text_value(source.get("source_uri")) or None,
+            index_generation=generation,
+            content_version=content_version,
+            permission_version=permission_version,
+            embedding_model_version=embedding_model_version,
+            explanation=explanation,
         )
 
     async def list_documents(
@@ -708,3 +816,89 @@ def _serialize_datetime(value: Any) -> str | None:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+_LEXICAL_SOURCE_FIELDS = (
+    "document_id",
+    "tenant_id",
+    "acl_tokens",
+    "source_type",
+    "source_id",
+    "provider",
+    "title",
+    "text",
+    "metadata",
+    "source_uri",
+    "content_version",
+    "permission_version",
+    "embedding_model_version",
+)
+
+
+def build_lexical_query(request: SearchRequest) -> dict[str, Any]:
+    """Build deterministic BM25 clauses with exact-ID and phrase boosts."""
+    scoped = compile_request_filters(request)
+    bool_query = scoped["bool"]
+    bool_query["must"] = [
+        {
+            "multi_match": {
+                "query": request.text,
+                "fields": ["title^3", "text"],
+                "type": "best_fields",
+                "operator": "or",
+            }
+        }
+    ]
+    bool_query["should"] = [
+        {"term": {"source_id": {"value": request.text, "boost": 8.0}}},
+        {"term": {"document_id": {"value": request.text, "boost": 6.0}}},
+        {"match_phrase": {"title": {"query": request.text, "boost": 4.0}}},
+        {"match_phrase": {"text": {"query": request.text, "boost": 2.0}}},
+    ]
+    bool_query["minimum_should_match"] = 0
+    return scoped
+
+
+def _total_hits(hits_payload: Any) -> int:
+    if not isinstance(hits_payload, dict):
+        return 0
+    total = hits_payload.get("total", 0)
+    if isinstance(total, dict):
+        total = total.get("value", 0)
+    return max(int(total), 0) if isinstance(total, (int, float)) else 0
+
+
+def _source_is_visible(source: dict[str, Any], scope: SearchScope) -> bool:
+    if source.get("tenant_id") != scope.tenant_id:
+        return False
+    raw_tokens = source.get("acl_tokens")
+    if not isinstance(raw_tokens, (list, tuple, set, frozenset)):
+        return False
+    document_tokens = {token for token in raw_tokens if isinstance(token, str)}
+    if f"tenant:{scope.tenant_id}" not in document_tokens:
+        return False
+    document_groups = {token for token in document_tokens if not token.startswith("tenant:")}
+    scope_groups = {token for token in scope.acl_tokens if not token.startswith("tenant:")}
+    return not document_groups or bool(document_groups.intersection(scope_groups))
+
+
+def _normalize_highlights(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, dict):
+        return ()
+    fragments: list[str] = []
+    for field in ("title", "text"):
+        raw_fragments = value.get(field)
+        if isinstance(raw_fragments, str):
+            raw_fragments = [raw_fragments]
+        if not isinstance(raw_fragments, list):
+            continue
+        for fragment in raw_fragments:
+            if isinstance(fragment, str) and fragment.strip():
+                fragments.append(fragment[:2000])
+                if len(fragments) >= 6:
+                    return tuple(fragments)
+    return tuple(fragments)
+
+
+def _text_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
