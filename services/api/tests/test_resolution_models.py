@@ -137,3 +137,20 @@ def test_grounded_resolution_contract_is_frozen_and_strict():
 def test_resolution_models_reject_blank_values(model, values):
     with pytest.raises(ValidationError):
         model(**values)
+
+
+def test_resolution_models_require_citations_and_reject_nested_extras():
+    with pytest.raises(ValidationError):
+        ResolutionClaim(text="unsupported claim", citation_labels=[])
+    with pytest.raises(ValidationError):
+        ResolutionCitation(label="[1]", source_id=" ")
+    with pytest.raises(ValidationError):
+        ResolutionStep(instruction="retry", citation_labels=["[1]", "[1]"])
+    with pytest.raises(ValidationError):
+        ActionProposal(description="review", command_type="reset_account")
+
+    outcome = _outcome()
+    with pytest.raises(ValidationError):
+        values = outcome.model_dump()
+        values["action_proposal"] = {"description": "review", "risk": "high"}
+        GroundedResolutionOutcome(**values)
