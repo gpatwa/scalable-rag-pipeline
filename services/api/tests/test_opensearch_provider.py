@@ -53,6 +53,9 @@ class FakeClient:
     async def close(self):
         self.closed = True
 
+    async def count(self, *, index):
+        return {"count": getattr(self, "count_response", 0)}
+
 
 @pytest.mark.asyncio
 async def test_health_is_not_ready_before_connect():
@@ -281,6 +284,55 @@ class FakeIndices:
                 self.aliases.setdefault(add["index"], {"aliases": {}})["aliases"][add["alias"]] = {
                     "is_write_index": add["is_write_index"]
                 }
+
+@pytest.mark.asyncio
+async def test_health_reports_active_generation_mapping_model_count_and_alias_state():
+    from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
+
+    mapping = build_support_index_definition(768)["mappings"]
+    mapping["_meta"] = {
+        "mapping_version": SUPPORT_SEARCH_MAPPING_VERSION,
+        "schema_version": "support-search-v1",
+        "embedding_model_version": "embed-v1",
+    }
+    client = FakeClient()
+    client.count_response = 42
+    client.indices = FakeIndices(
+        exists=True,
+        mapping=mapping,
+        aliases={"support-search-v2": {"aliases": {"support-search": {"is_write_index": True}}}},
+    )
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    health = await provider.health()
+
+    assert health.status == "ready"
+    assert health.index_generation == "support-search-v2"
+    assert health.document_count == 42
+    assert health.details["mapping_version"] == SUPPORT_SEARCH_MAPPING_VERSION
+    assert health.details["model"] == "embed-v1"
+    assert health.details["alias_state"] == {
+        "alias": "support-search",
+        "status": "active",
+        "indexes": ["support-search-v2"],
+        "write_index": "support-search-v2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_health_is_not_ready_when_search_alias_is_missing():
+    client = FakeClient()
+    client.indices = FakeIndices(exists=True, aliases={})
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    health = await provider.health()
+
+    assert health.status == "not_ready"
+    assert health.index_generation is None
+    assert health.document_count == 0
+    assert health.details["alias_state"]["status"] == "missing"
 
 
 @pytest.mark.asyncio

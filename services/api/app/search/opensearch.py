@@ -101,10 +101,24 @@ class OpenSearchProvider:
         if isinstance(version, dict) and version.get("number"):
             details["version"] = version["number"]
 
+        index_generation = None
+        document_count = 0
+        if getattr(self._client, "indices", None) is not None:
+            metadata = await self._with_retry(
+                "index_metadata",
+                lambda: self._read_index_metadata(self.config.OPENSEARCH_INDEX_ALIAS),
+            )
+            index_generation = metadata["index_generation"]
+            document_count = metadata["document_count"]
+            details.update(metadata["details"])
+            if metadata["alias_state"]["status"] != "active":
+                status = "not_ready"
+
         return SearchHealth(
             status=status,
             index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
-            document_count=0,
+            index_generation=index_generation,
+            document_count=document_count,
             details=details,
         )
 
@@ -217,6 +231,78 @@ class OpenSearchProvider:
             if isinstance(aliases, dict) and alias in aliases:
                 indexes.append(str(index_name))
         return tuple(sorted(indexes))
+
+    async def _read_index_metadata(self, alias: str) -> dict[str, Any]:
+        try:
+            alias_response = await self._client.indices.get_alias(name=alias)
+        except Exception as error:
+            if _is_not_found(error):
+                return {
+                    "index_generation": None,
+                    "document_count": 0,
+                    "alias_state": {"alias": alias, "status": "missing", "indexes": [], "write_index": None},
+                    "details": {
+                        "alias_state": {
+                            "alias": alias,
+                            "status": "missing",
+                            "indexes": [],
+                            "write_index": None,
+                        },
+                        "mapping": None,
+                        "model": None,
+                    },
+                }
+            raise
+
+        indexes = self._extract_alias_indexes(alias_response, alias)
+        write_indexes = []
+        for index_name in indexes:
+            payload = alias_response.get(index_name, {})
+            aliases = payload.get("aliases", {}) if isinstance(payload, dict) else {}
+            alias_options = aliases.get(alias, {}) if isinstance(aliases, dict) else {}
+            if isinstance(alias_options, dict) and alias_options.get("is_write_index") is True:
+                write_indexes.append(index_name)
+
+        write_index = write_indexes[0] if len(write_indexes) == 1 else (indexes[0] if len(indexes) == 1 else None)
+        alias_status = "active" if len(indexes) == 1 else ("multiple" if indexes else "missing")
+        alias_state = {
+            "alias": alias,
+            "status": alias_status,
+            "indexes": list(indexes),
+            "write_index": write_index,
+        }
+        if write_index is None:
+            return {
+                "index_generation": None,
+                "document_count": 0,
+                "alias_state": alias_state,
+                "details": {"alias_state": alias_state, "mapping": None, "model": None},
+            }
+
+        mapping_response = await self._client.indices.get_mapping(index=write_index)
+        mapping = self._extract_mapping(mapping_response, write_index)
+        metadata = mapping.get("_meta", {}) if isinstance(mapping, dict) else {}
+        properties = mapping.get("properties", {}) if isinstance(mapping, dict) else {}
+        count_response = await self._client.count(index=write_index)
+        document_count = count_response.get("count", 0) if isinstance(count_response, dict) else 0
+        mapping_summary = {
+            "version": metadata.get("mapping_version"),
+            "schema_version": metadata.get("schema_version"),
+            "field_count": len(properties) if isinstance(properties, dict) else 0,
+        }
+        model = metadata.get("embedding_model_version")
+        return {
+            "index_generation": write_index,
+            "document_count": max(0, int(document_count)),
+            "alias_state": alias_state,
+            "details": {
+                "alias_state": alias_state,
+                "mapping": mapping_summary,
+                "mapping_version": mapping_summary["version"],
+                "model": model,
+                "embedding_model_version": model,
+            },
+        }
 
     def _client_options(self) -> dict[str, Any]:
         parsed = urlsplit(self.config.get_opensearch_url())
