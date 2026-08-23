@@ -226,8 +226,25 @@ async def test_hybrid_query_fuses_deterministically_and_paginates_lexical_result
     assert all(result.retrieval_source == RetrievalSource.HYBRID for result in response.results)
     assert response.results[0].fusion_score > response.results[1].fusion_score
     assert response.total == 3
+    assert response.next_cursor
     assert client.search_calls[0]["body"]["size"] == 50
     assert client.search_calls[1]["body"]["query"]["knn"]
+
+    next_client = SequenceSearchClient([lexical_response, vector_response])
+    next_provider = OpenSearchProvider(config=_config(), client=next_client)
+    await next_provider.connect()
+    next_page = await next_provider.search(
+        SearchRequest(
+            text="export",
+            scope=_scope(),
+            mode=SearchMode.HYBRID,
+            query_vector=[0.1, 0.2],
+            limit=1,
+            cursor=response.next_cursor,
+        )
+    )
+    assert next_page.results[0].document_id == "doc-c"
+    assert next_page.total == 3
 
 
 @pytest.mark.asyncio

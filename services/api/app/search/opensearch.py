@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import json
 import time
@@ -402,6 +403,12 @@ class OpenSearchProvider:
     async def _search_hybrid(self, request: SearchRequest) -> SearchResponse:
         if request.query_vector is None:
             raise ValueError("hybrid search requires query_vector")
+        cursor_document_id: str | None = None
+        if request.cursor is not None:
+            cursor = _decode_cursor(request.cursor)
+            if len(cursor) != 2 or cursor[0] != "hybrid" or not isinstance(cursor[1], str):
+                raise ValueError("hybrid search cursor is invalid")
+            cursor_document_id = cursor[1]
         candidate_limit = min(max(request.limit * 10, 50), 1000)
         lexical_request = request.model_copy(
             update={"mode": SearchMode.LEXICAL, "limit": candidate_limit, "cursor": None}
@@ -458,11 +465,25 @@ class OpenSearchProvider:
                 )
             )
         fused.sort(key=lambda result: (-result.fusion_score, result.document_id))
+        total = len(fused)
+        if cursor_document_id is not None:
+            cursor_index = next(
+                (index for index, result in enumerate(fused) if result.document_id == cursor_document_id),
+                None,
+            )
+            if cursor_index is None:
+                raise ValueError("hybrid search cursor does not match this result set")
+            fused = fused[cursor_index + 1 :]
         selected = [result.model_copy(update={"rank": rank}) for rank, result in enumerate(fused[: request.limit], 1)]
         generation = next((result.index_generation for result in selected), self.config.OPENSEARCH_INDEX_ALIAS)
         return SearchResponse(
             results=tuple(selected),
-            total=len(fused),
+            total=total,
+            next_cursor=(
+                _encode_cursor(["hybrid", selected[-1].document_id])
+                if len(selected) == request.limit and selected
+                else None
+            ),
             index_alias=self.config.OPENSEARCH_INDEX_ALIAS,
             index_generation=generation,
         )
@@ -1033,7 +1054,7 @@ def _decode_cursor(cursor: str) -> list[Any]:
         padding = "=" * (-len(cursor) % 4)
         decoded = base64.urlsafe_b64decode((cursor + padding).encode("ascii"))
         value = json.loads(decoded.decode("utf-8"))
-    except (ValueError, UnicodeError, json.JSONDecodeError) as error:
+    except (ValueError, UnicodeError, json.JSONDecodeError, binascii.Error) as error:
         raise ValueError("search cursor is invalid") from error
     if not isinstance(value, list) or not value or len(value) > 8:
         raise ValueError("search cursor is invalid")
