@@ -27,6 +27,27 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  # Opt-in enterprise search plane. This deliberately does not alter the
+  # default Qdrant demo; start it with `docker compose --profile search up`.
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    profiles: ["search"]
+
   # 4. Neo4j (Graph DB)
   neo4j:
     image: neo4j:5.16.0-community
@@ -212,3 +233,4 @@ volumes:
   pg_data:
   qdrant_data:
   neo4j_data:
+  opensearch_data:

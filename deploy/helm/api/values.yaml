@@ -32,6 +32,18 @@ tolerations: []
 # Extra environment variables (merged into container env)
 env: {}
 
+# OpenSearch is disabled by default. Credentials stay in `secretRef`; these
+# values contain only non-secret routing/configuration inputs.
+enterpriseSearch:
+  enabled: false
+  url: ""
+  indexAlias: "compass-support-search"
+  vectorDimensions: 768
+  authSecretKeys:
+    username: OPENSEARCH_USERNAME
+    password: OPENSEARCH_PASSWORD
+    apiKey: OPENSEARCH_API_KEY
+
 supportWorker:
   enabled: false
   replicaCount: 1

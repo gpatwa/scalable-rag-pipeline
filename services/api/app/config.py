@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     OPENSEARCH_INDEX_ALIAS: str = "compass-support-search"
     OPENSEARCH_VECTOR_DIMENSIONS: int = 768
     OPENSEARCH_EMBEDDING_MODEL_VERSION: str = "default"
+    OPENSEARCH_SHADOW_ENABLED: bool = False
+    OPENSEARCH_SHADOW_PERCENT: int = 0
+    OPENSEARCH_CANARY_PERCENT: int = 0
 
     # -----------------------------------------------------------------
     # Enterprise search indexing worker
@@ -415,6 +418,10 @@ class Settings(BaseSettings):
             raise ValueError("OPENSEARCH_MAX_RETRIES cannot be negative")
         if self.OPENSEARCH_POOL_MAXSIZE < 1:
             raise ValueError("OPENSEARCH_POOL_MAXSIZE must be positive")
+        if not 0 <= self.OPENSEARCH_SHADOW_PERCENT <= 100:
+            raise ValueError("OPENSEARCH_SHADOW_PERCENT must be between 0 and 100")
+        if not 0 <= self.OPENSEARCH_CANARY_PERCENT <= 100:
+            raise ValueError("OPENSEARCH_CANARY_PERCENT must be between 0 and 100")
         if self.ENV.lower() in {"prod", "production", "staging"}:
             if scheme != "https":
                 raise ValueError("OpenSearch must use HTTPS outside development")
