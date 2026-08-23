@@ -6,6 +6,9 @@
 > The OpenSearch migration, enterprise retrieval, personalization, and
 > recommendation program is maintained in
 > [Enterprise Search and Recommendation OpenSearch Execution Plan](ENTERPRISE_SEARCH_OPENSEARCH_EXECUTION_PLAN.md).
+> The bounded LLM reasoning, grounded resolution, and typed action program is
+> maintained in
+> [LLM Search and Resolution Intelligence Execution Plan](LLM_RESOLUTION_INTELLIGENCE_EXECUTION_PLAN.md).
 
 ## Current State (v1.0)
 

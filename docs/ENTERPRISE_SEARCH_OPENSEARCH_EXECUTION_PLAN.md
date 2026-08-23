@@ -23,6 +23,10 @@ Audience: Engineering leads, reviewers, and delegated coding models
 Scope: Agentic Search and Support Resolution Intelligence under `services/api`,
 `apps/support-web`, and their deployment assets
 
+The dependent LLM reasoning, grounded synthesis, and typed action work is
+maintained separately in the
+[LLM Search and Resolution Intelligence Execution Plan](LLM_RESOLUTION_INTELLIGENCE_EXECUTION_PLAN.md).
+
 ## 1. Executive Decision
 
 Use OpenSearch as the enterprise search plane for lexical, vector, hybrid,
