@@ -158,6 +158,15 @@ class SupportResolver:
         citations = result.get("citations")
         if not isinstance(citations, list):
             raise ValueError("resolution pipeline returned invalid citations")
+        expected_sources = {
+            f"[{index}]": match.get("source_id")
+            for index, match in enumerate(matches, start=1)
+        }
+        for citation in citations:
+            if not isinstance(citation, dict) or citation.get("label") not in expected_sources:
+                raise ValueError("resolution pipeline returned an unknown citation")
+            if citation.get("source_id") != expected_sources[citation["label"]]:
+                raise ValueError("resolution pipeline citation source mismatch")
         verified, _ = self._verified_answer(query="", answer=answer, matches=matches)
         if verified != answer:
             raise ValueError("resolution pipeline citations could not be verified")
