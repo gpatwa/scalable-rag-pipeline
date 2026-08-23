@@ -7,6 +7,11 @@ review gates are maintained in the
 Use one task ID per Luna session. Give the model the canonical plan and one
 packet only. Do not include chat history or unrelated architecture documents.
 
+Current checkpoint: **LLM-057 complete**. The resolution workflow is approved
+for local demo use only. Production approval remains blocked on live provider,
+real-model, operational, performance, security sign-off, and deployment
+evidence; Azure deployment is deferred.
+
 ## First Dispatch Wave
 
 | Task | Purpose | Can run concurrently |
@@ -37,4 +42,3 @@ npm --prefix apps/support-web run typecheck
 npm --prefix apps/support-web test -- --run
 git diff --check
 ```
-
