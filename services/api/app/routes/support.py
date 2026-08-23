@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, select
+from sqlalchemy.exc import IntegrityError
 
 from app.audit import manager as audit_mgr
 from app.auth.tenant import TenantContext, get_tenant_context
@@ -20,6 +21,8 @@ from app.support.indexer import SupportIndexError, support_indexer
 from app.support.insights import repeat_ticket_insights
 from app.support.jobs import support_job_manager, support_job_worker
 from app.support.models import SupportAction, SupportSyncRun, SupportTicket
+from app.support.commands import SupportCommand
+from app.support.command_policy import PolicyOutcome, evaluate_support_command
 from app.support.resolver import SupportResolveError, support_resolver
 from app.support.store import support_data_store
 from app.support.sync import SupportSyncError, support_sync_runner
@@ -232,6 +235,13 @@ class SupportActionCreateRequest(BaseModel):
     action_type: str = Field(default="support_agent_command", max_length=64)
 
 
+class SupportActionProposalRequest(BaseModel):
+    command: SupportCommand
+    cluster_title: str = Field(default="Typed support resolution", min_length=1, max_length=500)
+    cluster_id: Optional[str] = None
+    command_text: Optional[str] = None
+
+
 class SupportActionStatusRequest(BaseModel):
     status: str
     review_notes: Optional[str] = None
@@ -251,6 +261,12 @@ class SupportActionResponse(BaseModel):
     cluster_title: str
     command_text: str
     workflow: dict[str, Any]
+    command_contract_version: Optional[str]
+    command_payload: Optional[dict[str, Any]]
+    policy_status: Optional[str]
+    policy_reason: Optional[str]
+    evidence_ids: Optional[list[str]]
+    idempotency_key: Optional[str]
     review_notes: Optional[str]
     approved_by: Optional[str]
     approved_at: Optional[str]
@@ -297,6 +313,47 @@ async def create_support_action(
 
     payload = _action_to_response(action).model_dump()
     await _audit_action(ctx, "create", True, start, payload, status.HTTP_201_CREATED)
+    return {"action": payload}
+
+
+@router.post("/actions/proposals", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_support_action_proposal(
+    body: SupportActionProposalRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+):
+    from app.memory.postgres import AsyncSessionLocal
+
+    if body.command.context.tenant_id != ctx.tenant_id:
+        raise HTTPException(status_code=403, detail="support command tenant mismatch")
+    decision = evaluate_support_command(body.command)
+    if decision.outcome is PolicyOutcome.DENY:
+        raise HTTPException(status_code=403, detail=f"support command denied: {decision.reason_code.value}")
+    if AsyncSessionLocal is None:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    command_payload = body.command.model_dump(mode="json")
+    command_payload.update(policy_version="support-policy.v1", evidence_version="evidence.v1")
+    start = time.monotonic()
+    async with AsyncSessionLocal() as session:
+        action = SupportAction(
+            id=f"support-action-{uuid4().hex[:12]}", tenant_id=ctx.tenant_id,
+            created_by=ctx.user_id, action_type=body.command.command_type.value,
+            status="generated", cluster_id=body.cluster_id, cluster_title=body.cluster_title,
+            command_text=body.command_text or body.command.command_type.value,
+            workflow={"proposal": True}, command_contract_version=body.command.contract_version,
+            command_payload=command_payload, policy_status=decision.outcome.value,
+            policy_reason=decision.reason_code.value, evidence_ids=list(body.command.evidence_ids),
+            idempotency_key=body.command.idempotency_key,
+        )
+        session.add(action)
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="duplicate support command idempotency key") from exc
+        await session.refresh(action)
+    payload = _action_to_response(action).model_dump()
+    await _audit_action(ctx, "create_proposal", True, start, payload, status.HTTP_201_CREATED)
     return {"action": payload}
 
 
@@ -378,6 +435,14 @@ async def update_support_action_status(
                 status.HTTP_404_NOT_FOUND,
             )
             raise HTTPException(status_code=404, detail="support action not found")
+
+        if action.command_payload:
+            allowed = {
+                "generated": {"approved", "rejected"},
+                "approved": {"ready_to_execute"},
+            }.get(action.status, set())
+            if body.status not in allowed:
+                raise HTTPException(status_code=409, detail="invalid support proposal state transition")
 
         action.status = body.status
         action.review_notes = body.review_notes
@@ -997,6 +1062,12 @@ def _action_to_response(action: SupportAction) -> SupportActionResponse:
         cluster_title=action.cluster_title,
         command_text=action.command_text,
         workflow=action.workflow or {},
+        command_contract_version=action.command_contract_version,
+        command_payload=action.command_payload,
+        policy_status=action.policy_status,
+        policy_reason=action.policy_reason,
+        evidence_ids=action.evidence_ids,
+        idempotency_key=action.idempotency_key,
         review_notes=action.review_notes,
         approved_by=action.approved_by,
         approved_at=_dt(action.approved_at),
@@ -1043,6 +1114,11 @@ def _mock_support_action_execution(
 
     return {
         "mode": "local_mock",
+        "receipt_version": "support-execution-receipt.v1",
+        "command_version": action.command_contract_version,
+        "evidence_version": (action.command_payload or {}).get("evidence_version"),
+        "policy_version": (action.command_payload or {}).get("policy_version"),
+        "evidence_ids": list(action.evidence_ids or []),
         "executed_by": executed_by,
         "executed_at": _dt(executed_at),
         "notes": notes,
