@@ -131,6 +131,46 @@ class OpenSearchProvider:
                 "create a new generation before retrying"
             )
 
+    async def activate_alias(self, alias: str, index_name: str) -> None:
+        """Atomically point a stable alias at a known physical generation."""
+        self._require_connected()
+        alias = alias.strip()
+        index_name = index_name.strip()
+        if not alias or not index_name:
+            raise ValueError("alias and index_name cannot be blank")
+        if not await self._index_exists(index_name):
+            raise ValueError(f"cannot activate unknown OpenSearch index generation: {index_name}")
+
+        try:
+            response = await self._client.indices.get_alias(name=alias)
+        except Exception as error:
+            if _is_not_found(error):
+                response = {}
+            else:
+                raise normalize_opensearch_exception(error, operation="get_alias") from error
+
+        current_indexes = self._extract_alias_indexes(response, alias)
+        if current_indexes == (index_name,):
+            return
+
+        actions = [
+            {"remove": {"index": current_index, "alias": alias}}
+            for current_index in current_indexes
+        ]
+        actions.append(
+            {
+                "add": {
+                    "index": index_name,
+                    "alias": alias,
+                    "is_write_index": True,
+                }
+            }
+        )
+        try:
+            await self._client.indices.update_aliases(body={"actions": actions})
+        except Exception as error:
+            raise normalize_opensearch_exception(error, operation="activate_alias") from error
+
     def _require_connected(self) -> None:
         if not self._connected or self._client is None:
             raise RuntimeError("OpenSearch provider must be connected before index operations")
@@ -158,6 +198,19 @@ class OpenSearchProvider:
             return {}
         mapping = payload.get("mappings", payload)
         return mapping if isinstance(mapping, dict) else {}
+
+    @staticmethod
+    def _extract_alias_indexes(response: Any, alias: str) -> tuple[str, ...]:
+        if not isinstance(response, dict):
+            return ()
+        indexes = []
+        for index_name, payload in response.items():
+            if not isinstance(payload, dict):
+                continue
+            aliases = payload.get("aliases", {})
+            if isinstance(aliases, dict) and alias in aliases:
+                indexes.append(str(index_name))
+        return tuple(sorted(indexes))
 
     def _client_options(self) -> dict[str, Any]:
         parsed = urlsplit(self.config.get_opensearch_url())
@@ -189,3 +242,13 @@ class OpenSearchProvider:
             raise ValueError("OPENSEARCH_AUTH_MODE must be one of: none, basic, api_key")
 
         return options
+
+
+def _is_not_found(error: BaseException) -> bool:
+    status_code = getattr(error, "status_code", None)
+    if status_code == 404:
+        return True
+    meta = getattr(error, "meta", None)
+    if getattr(meta, "status_code", None) == 404:
+        return True
+    return "notfound" in type(error).__name__.lower() or "not found" in str(error).lower()

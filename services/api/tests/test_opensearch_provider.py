@@ -156,11 +156,14 @@ async def test_provider_wraps_transport_errors_with_operation_context():
 
 
 class FakeIndices:
-    def __init__(self, *, exists=False, mapping=None):
+    def __init__(self, *, exists=False, mapping=None, aliases=None, update_error=None):
         self.exists_response = exists
         self.mapping = mapping
+        self.aliases = aliases or {}
+        self.update_error = update_error
         self.created = []
         self.get_mapping_calls = 0
+        self.alias_updates = []
 
     async def exists(self, *, index):
         return self.exists_response
@@ -171,6 +174,94 @@ class FakeIndices:
     async def get_mapping(self, *, index):
         self.get_mapping_calls += 1
         return {index: {"mappings": self.mapping}}
+
+    async def get_alias(self, *, name):
+        if not self.aliases:
+            raise StatusError(404)
+        return self.aliases
+
+    async def update_aliases(self, *, body):
+        if self.update_error:
+            raise self.update_error
+        self.alias_updates.append(body)
+        for action in body["actions"]:
+            if "remove" in action:
+                remove = action["remove"]
+                self.aliases.get(remove["index"], {}).get("aliases", {}).pop(remove["alias"], None)
+            else:
+                add = action["add"]
+                self.aliases.setdefault(add["index"], {"aliases": {}})["aliases"][add["alias"]] = {
+                    "is_write_index": add["is_write_index"]
+                }
+
+
+@pytest.mark.asyncio
+async def test_activate_alias_creates_alias_for_known_index():
+    client = FakeClient()
+    client.indices = FakeIndices(exists=True)
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    await provider.activate_alias("support-search", "support-search-v1")
+
+    assert client.indices.alias_updates == [
+        {
+            "actions": [
+                {
+                    "add": {
+                        "index": "support-search-v1",
+                        "alias": "support-search",
+                        "is_write_index": True,
+                    }
+                }
+            ]
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_activate_alias_swaps_generation_in_one_atomic_request():
+    client = FakeClient()
+    client.indices = FakeIndices(
+        exists=True,
+        aliases={"support-search-v1": {"aliases": {"support-search": {}}}},
+    )
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    await provider.activate_alias("support-search", "support-search-v2")
+
+    assert client.indices.alias_updates[0] == {
+        "actions": [
+            {"remove": {"index": "support-search-v1", "alias": "support-search"}},
+            {
+                "add": {
+                    "index": "support-search-v2",
+                    "alias": "support-search",
+                    "is_write_index": True,
+                }
+            },
+        ]
+    }
+    assert "support-search" not in client.indices.aliases["support-search-v1"]["aliases"]
+    assert client.indices.aliases["support-search-v2"]["aliases"]["support-search"]["is_write_index"] is True
+
+
+@pytest.mark.asyncio
+async def test_activate_alias_failure_preserves_previous_target():
+    from app.search.errors import OpenSearchError
+
+    previous = {"support-search-v1": {"aliases": {"support-search": {}}}}
+    client = FakeClient()
+    client.indices = FakeIndices(exists=True, aliases=previous, update_error=StatusError(503))
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    with pytest.raises(OpenSearchError) as raised:
+        await provider.activate_alias("support-search", "support-search-v2")
+
+    assert raised.value.code == "unavailable"
+    assert client.indices.aliases == previous
 
 
 @pytest.mark.asyncio
