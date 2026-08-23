@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
+
+from app.search.features import RankingFeatures, default_features
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -84,4 +87,45 @@ class RerankResult(_FrozenModel):
         return self
 
 
-__all__ = ["RerankCandidate", "RerankItem", "RerankRequest", "RerankResult"]
+def pre_rank_authorized(
+    request: RerankRequest,
+    features_by_document: Mapping[str, RankingFeatures],
+    *,
+    weights: Mapping[str, float] | None = None,
+) -> RerankResult:
+    """Apply deterministic feature reranking to an authorized candidate set."""
+    active_weights = {
+        "recency": 0.1,
+        "popularity": 0.1,
+        "expertise": 0.1,
+        "role_match": 0.05,
+        "content_quality": 0.05,
+    }
+    active_weights.update(weights or {})
+
+    ranked: list[tuple[float, RerankCandidate]] = []
+    for candidate in request.candidates:
+        feature = features_by_document.get(candidate.document_id, default_features())
+        adjustment = sum(getattr(feature, name) * value for name, value in active_weights.items())
+        ranked.append((candidate.original_score + adjustment, candidate))
+
+    ranked.sort(key=lambda entry: (-entry[0], entry[1].document_id))
+    return RerankResult(
+        query_id=request.query_id,
+        scope_identity=request.scope_identity,
+        items=tuple(
+            RerankItem(
+                document_id=candidate.document_id,
+                score=min(max(score, 0.0), 1.0),
+                source_type=candidate.source_type,
+                source_id=candidate.source_id,
+                index_version=candidate.index_version,
+                permission_version=candidate.permission_version,
+                evidence_version=candidate.evidence_version,
+            )
+            for score, candidate in ranked
+        ),
+    )
+
+
+__all__ = ["RerankCandidate", "RerankItem", "RerankRequest", "RerankResult", "pre_rank_authorized"]

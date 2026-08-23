@@ -1,6 +1,6 @@
 import pytest
 
-from app.resolution.ranking import RerankCandidate, RerankItem, RerankRequest, RerankResult
+from app.resolution.ranking import RerankCandidate, RerankItem, RerankRequest, RerankResult, pre_rank_authorized
 
 
 def candidate(document_id="doc-1", rank=1):
@@ -48,3 +48,33 @@ def test_models_reject_extra_fields_and_scores_out_of_range():
         item(score=1.1)
     with pytest.raises(ValueError):
         RerankCandidate(**{**candidate().model_dump(), "unexpected": True})
+
+
+def test_pre_rank_reorders_authorized_candidates_and_defaults_missing_features():
+    from app.search.features import RankingFeatures
+
+    result = pre_rank_authorized(
+        request(candidate("b"), candidate("a", 2)),
+        {"a": RankingFeatures(popularity=1.0)},
+    )
+
+    assert [item.document_id for item in result.items] == ["a", "b"]
+    assert result.items[0].score == 0.6
+    assert result.validate_against(request(candidate("b"), candidate("a", 2))) == result
+
+
+def test_pre_rank_preserves_provenance_and_bounds_scores():
+    from app.search.features import RankingFeatures
+
+    original = request(candidate())
+    result = pre_rank_authorized(original, {"doc-1": RankingFeatures(popularity=100.0)})
+
+    assert result.items[0].score == 1.0
+    assert result.items[0].model_dump(exclude={"document_id", "score"}) == {
+        "reason_codes": (),
+        "source_type": "article",
+        "source_id": "doc-1",
+        "index_version": "idx-1",
+        "permission_version": "perm-1",
+        "evidence_version": "ev-1",
+    }
