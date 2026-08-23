@@ -42,6 +42,7 @@ class FakeClient:
         self.info_error = info_error
         self.closed = False
         self.info_calls = 0
+        self.indices = None
 
     async def info(self):
         self.info_calls += 1
@@ -98,6 +99,103 @@ async def test_connect_propagates_authentication_and_timeout_failures(error):
 
     with pytest.raises(type(error), match=str(error)):
         await provider.connect()
+
+
+class FakeIndices:
+    def __init__(self, *, exists=False, mapping=None):
+        self.exists_response = exists
+        self.mapping = mapping
+        self.created = []
+        self.get_mapping_calls = 0
+
+    async def exists(self, *, index):
+        return self.exists_response
+
+    async def create(self, *, index, body):
+        self.created.append((index, body))
+
+    async def get_mapping(self, *, index):
+        self.get_mapping_calls += 1
+        return {index: {"mappings": self.mapping}}
+
+
+@pytest.mark.asyncio
+async def test_ensure_index_creates_versioned_physical_index():
+    client = FakeClient()
+    client.indices = FakeIndices()
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    from app.search.models import SearchIndexSpec
+
+    await provider.ensure_index(
+        SearchIndexSpec(
+            alias="support-search",
+            generation="support-search-v1",
+            schema_version="support-search-v1",
+            vector_dimensions=768,
+            embedding_model_version="embed-v1",
+        )
+    )
+
+    assert len(client.indices.created) == 1
+    index_name, definition = client.indices.created[0]
+    assert index_name == "support-search-v1"
+    assert definition["mappings"]["properties"]["embedding"]["dimension"] == 768
+    assert definition["mappings"]["_meta"]["schema_version"] == "support-search-v1"
+
+
+@pytest.mark.asyncio
+async def test_ensure_index_is_idempotent_for_matching_mapping():
+    from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
+    from app.search.models import SearchIndexSpec
+
+    expected = build_support_index_definition(768)
+    expected["mappings"]["_meta"] = {
+        "mapping_version": SUPPORT_SEARCH_MAPPING_VERSION,
+        "schema_version": "support-search-v1",
+        "embedding_model_version": "embed-v1",
+    }
+    client = FakeClient()
+    client.indices = FakeIndices(exists=True, mapping=expected["mappings"])
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    await provider.ensure_index(
+        SearchIndexSpec(
+            alias="support-search",
+            generation="support-search-v1",
+            schema_version="support-search-v1",
+            vector_dimensions=768,
+            embedding_model_version="embed-v1",
+        )
+    )
+
+    assert client.indices.created == []
+    assert client.indices.get_mapping_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_index_rejects_incompatible_existing_mapping():
+    from app.search.mappings import build_support_index_definition
+    from app.search.models import SearchIndexSpec
+
+    existing = build_support_index_definition(1536)["mappings"]
+    client = FakeClient()
+    client.indices = FakeIndices(exists=True, mapping=existing)
+    provider = OpenSearchProvider(config=_config(), client=client)
+    await provider.connect()
+
+    with pytest.raises(ValueError, match="support-search-v1.*incompatible mapping"):
+        await provider.ensure_index(
+            SearchIndexSpec(
+                alias="support-search",
+                generation="support-search-v1",
+                schema_version="support-search-v1",
+                vector_dimensions=768,
+                embedding_model_version="embed-v1",
+            )
+        )
 
 
 def test_client_options_include_tls_and_basic_auth():

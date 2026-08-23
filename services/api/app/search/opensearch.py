@@ -5,7 +5,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import Settings, settings
-from app.search.models import SearchHealth
+from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
+from app.search.models import SearchHealth, SearchIndexSpec
 
 try:
     from opensearchpy import AsyncOpenSearch
@@ -93,6 +94,54 @@ class OpenSearchProvider:
             document_count=0,
             details=details,
         )
+
+    async def ensure_index(self, spec: SearchIndexSpec) -> None:
+        """Create or validate a physical index for a versioned generation."""
+        self._require_connected()
+        index_name = spec.generation
+        definition = build_support_index_definition(spec.vector_dimensions)
+        definition["mappings"]["_meta"] = {
+            "mapping_version": SUPPORT_SEARCH_MAPPING_VERSION,
+            "schema_version": spec.schema_version,
+            "embedding_model_version": spec.embedding_model_version,
+        }
+
+        if not await self._index_exists(index_name):
+            await self._client.indices.create(index=index_name, body=definition)
+            return
+
+        existing = await self._client.indices.get_mapping(index=index_name)
+        existing_mapping = self._extract_mapping(existing, index_name)
+        if existing_mapping != definition["mappings"]:
+            raise ValueError(
+                f"OpenSearch index {index_name!r} exists with incompatible mapping; "
+                "create a new generation before retrying"
+            )
+
+    def _require_connected(self) -> None:
+        if not self._connected or self._client is None:
+            raise RuntimeError("OpenSearch provider must be connected before index operations")
+
+    async def _index_exists(self, index_name: str) -> bool:
+        response = await self._client.indices.exists(index=index_name)
+        if isinstance(response, bool):
+            return response
+        body = getattr(response, "body", None)
+        return bool(response if body is None else body)
+
+    @staticmethod
+    def _extract_mapping(response: Any, index_name: str) -> dict[str, Any]:
+        if not isinstance(response, dict):
+            return {}
+        payload = response.get(index_name)
+        if not isinstance(payload, dict):
+            if len(response) != 1:
+                return {}
+            payload = next(iter(response.values()))
+        if not isinstance(payload, dict):
+            return {}
+        mapping = payload.get("mappings", payload)
+        return mapping if isinstance(mapping, dict) else {}
 
     def _client_options(self) -> dict[str, Any]:
         parsed = urlsplit(self.config.get_opensearch_url())
