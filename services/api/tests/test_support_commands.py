@@ -52,8 +52,13 @@ def test_rejects_extra_fields_duplicate_evidence_and_unbounded_parameters():
         command(parameters={"nested": {"unsafe": True}})
 
 
-@pytest.mark.parametrize("risk,approval", [("medium", "not_required"), ("high", "not_required"), ("low", "required")])
+@pytest.mark.parametrize("risk,approval", [("medium", "not_required"), ("high", "not_required")])
 def test_rejects_invalid_risk_approval_combinations(risk, approval):
     with pytest.raises(ValidationError):
         command(risk_level=risk, approval_requirement=approval)
 
+
+def test_low_risk_command_may_still_require_approval():
+    value = command(approval_requirement="required")
+    assert value.risk_level is RiskLevel.LOW
+    assert value.approval_requirement is ApprovalRequirement.REQUIRED

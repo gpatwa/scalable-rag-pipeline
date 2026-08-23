@@ -102,8 +102,6 @@ class SupportCommand(SupportCommandModel):
         if self.risk_level in (SupportRiskLevel.MEDIUM, SupportRiskLevel.HIGH):
             if self.approval_requirement is not SupportApprovalRequirement.REQUIRED:
                 raise ValueError("medium and high risk commands require approval")
-        elif self.approval_requirement is SupportApprovalRequirement.REQUIRED:
-            raise ValueError("low risk commands cannot require approval")
         return self
 
 
