@@ -25,6 +25,9 @@ google-genai>=0.5.0  # Gemini multimodal embeddings (text + image)
 neo4j==5.16.0
 qdrant-client==1.7.3
 
+# Enterprise Search — provider is disabled until configured.
+opensearch-py>=2.4,<3.0
+
 # Agent Framework
 langgraph==0.0.21  # pulls in langchain-core automatically
 
