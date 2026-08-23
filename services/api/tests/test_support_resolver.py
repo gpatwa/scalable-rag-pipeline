@@ -43,6 +43,19 @@ class FabricatedCitationLLM:
         return "Restart the export worker and retry the CSV export [9]."
 
 
+class FakeResolutionPipeline:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    async def resolve(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.result
+
+
 def _match(score=0.91):
     return {
         "id": "point-1",
@@ -62,6 +75,71 @@ def _match(score=0.91):
 
 
 class TestSupportResolver:
+    @pytest.fixture(autouse=True)
+    def reset_resolution_pipeline(self):
+        import app.support.resolver as resolver_mod
+
+        resolver_mod.set_resolution_pipeline(None)
+        yield
+        resolver_mod.set_resolution_pipeline(None)
+
+    @pytest.mark.asyncio
+    async def test_resolution_pipeline_is_disabled_by_default(self, monkeypatch):
+        import app.support.resolver as resolver_mod
+        from app.support.resolver import support_resolver
+
+        pipeline = FakeResolutionPipeline({"answer": "pipeline [1]", "confidence": "high", "citations": [], "next_action": "agent_review"})
+        monkeypatch.setattr(resolver_mod, "support_indexer", FakeSupportIndexer([_match()]))
+        resolver_mod.set_clients(None)
+        resolver_mod.set_resolution_pipeline(pipeline)
+
+        result = await support_resolver.resolve(tenant_id="tenant-a", question="export timeout")
+
+        assert pipeline.calls == []
+        assert "Likely related prior resolution" in result["answer"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_pipeline_returns_grounded_response_and_scope(self, monkeypatch):
+        import app.support.resolver as resolver_mod
+        from app.support.resolver import support_resolver
+
+        pipeline = FakeResolutionPipeline({
+            "answer": "Restart the export worker [1].",
+            "confidence": "high",
+            "citations": [{"label": "[1]", "source_id": "42"}],
+            "next_action": "suggest_agent_response",
+            "abstention": False,
+            "prompt": "must not be returned",
+        })
+        monkeypatch.setattr(resolver_mod, "support_indexer", FakeSupportIndexer([_match(), _match(0.83)]))
+        resolver_mod.set_clients(None)
+        resolver_mod.set_resolution_pipeline(pipeline, enabled=True)
+        scope = {"tenant_id": "tenant-a", "principal": "agent-1", "acl": ["support"]}
+
+        result = await support_resolver.resolve(tenant_id="tenant-a", question="export timeout", acl_scope=scope)
+
+        assert result["answer"] == "Restart the export worker [1]."
+        assert result["matches"]
+        assert "prompt" not in result
+        assert pipeline.calls[0]["tenant_id"] == "tenant-a"
+        assert pipeline.calls[0]["acl_scope"] is scope
+
+    @pytest.mark.asyncio
+    async def test_enabled_pipeline_failure_uses_deterministic_fallback(self, monkeypatch):
+        import app.support.resolver as resolver_mod
+        from app.support.resolver import support_resolver
+
+        pipeline = FakeResolutionPipeline(error=TimeoutError("provider timeout"))
+        llm = FakeLLM()
+        monkeypatch.setattr(resolver_mod, "support_indexer", FakeSupportIndexer([_match()]))
+        resolver_mod.set_clients(llm)
+        resolver_mod.set_resolution_pipeline(pipeline, enabled=True)
+
+        result = await support_resolver.resolve(tenant_id="tenant-a", question="export timeout")
+
+        assert "Likely related prior resolution" in result["answer"]
+        assert llm.messages == []
+
     @pytest.mark.asyncio
     async def test_resolve_generates_cited_answer_from_support_index(self, monkeypatch):
         import app.support.resolver as resolver_mod
