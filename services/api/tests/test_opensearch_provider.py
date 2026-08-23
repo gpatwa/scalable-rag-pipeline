@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from app.search.opensearch import OpenSearchProvider
+
+
+def _config(**overrides):
+    values = {
+        "OPENSEARCH_INDEX_ALIAS": "support-search",
+        "OPENSEARCH_URL": "https://search.internal:9200",
+        "OPENSEARCH_PORT": 9200,
+        "OPENSEARCH_VERIFY_CERTS": True,
+        "OPENSEARCH_CA_CERT_PATH": "/etc/certs/search-ca.pem",
+        "OPENSEARCH_REQUEST_TIMEOUT_SECONDS": 10.0,
+        "OPENSEARCH_MAX_RETRIES": 3,
+        "OPENSEARCH_RETRY_ON_TIMEOUT": True,
+        "OPENSEARCH_POOL_MAXSIZE": 8,
+        "OPENSEARCH_AUTH_MODE": "basic",
+        "OPENSEARCH_USERNAME": "search-user",
+        "OPENSEARCH_PASSWORD": "search-password",
+        "get_opensearch_url": lambda: "https://search.internal:9200",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+class FakeCluster:
+    def __init__(self, response):
+        self.response = response
+
+    async def health(self):
+        return self.response
+
+
+class FakeClient:
+    def __init__(self, *, info_response=None, cluster_response=None, info_error=None):
+        self.info_response = info_response or {"version": {"number": "2.15.0"}}
+        self.cluster = FakeCluster(cluster_response or {"status": "green", "number_of_nodes": 3})
+        self.info_error = info_error
+        self.closed = False
+        self.info_calls = 0
+
+    async def info(self):
+        self.info_calls += 1
+        if self.info_error:
+            raise self.info_error
+        return self.info_response
+
+    async def close(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_health_is_not_ready_before_connect():
+    provider = OpenSearchProvider(config=_config(), client=FakeClient())
+
+    health = await provider.health()
+
+    assert health.status == "not_ready"
+    assert health.index_alias == "support-search"
+    assert health.details["connected"] is False
+
+
+@pytest.mark.asyncio
+async def test_connect_health_and_close_use_async_client():
+    client = FakeClient(
+        cluster_response={
+            "status": "yellow",
+            "cluster_name": "support-search",
+            "number_of_nodes": 2,
+            "active_shards": 4,
+            "unassigned_shards": 1,
+        }
+    )
+    provider = OpenSearchProvider(config=_config(), client=client)
+
+    await provider.connect()
+    health = await provider.health()
+    await provider.close()
+
+    assert client.info_calls == 1
+    assert health.status == "ready"
+    assert health.details["cluster_status"] == "yellow"
+    assert health.details["version"] == "2.15.0"
+    assert client.closed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [PermissionError("unauthorized"), TimeoutError("timed out")])
+async def test_connect_propagates_authentication_and_timeout_failures(error):
+    provider = OpenSearchProvider(
+        config=_config(),
+        client=FakeClient(info_error=error),
+    )
+
+    with pytest.raises(type(error), match=str(error)):
+        await provider.connect()
+
+
+def test_client_options_include_tls_and_basic_auth():
+    provider = OpenSearchProvider(config=_config())
+
+    options = provider._client_options()
+
+    assert options["hosts"] == [{"host": "search.internal", "port": 9200}]
+    assert options["use_ssl"] is True
+    assert options["verify_certs"] is True
+    assert options["ca_certs"] == "/etc/certs/search-ca.pem"
+    assert options["http_auth"] == ("search-user", "search-password")
+    assert options["max_retries"] == 3
+
+
+def test_client_options_use_api_key_header():
+    provider = OpenSearchProvider(
+        config=_config(
+            OPENSEARCH_AUTH_MODE="api_key",
+            OPENSEARCH_USERNAME=None,
+            OPENSEARCH_PASSWORD=None,
+            OPENSEARCH_API_KEY="encoded-key",
+        )
+    )
+
+    assert provider._client_options()["headers"] == {"Authorization": "ApiKey encoded-key"}
