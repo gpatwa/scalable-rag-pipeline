@@ -12,15 +12,15 @@ SUPPORTED_SEARCH_PROVIDERS = ("opensearch",)
 def create_search_provider(provider: str, *, config: Settings | None = None) -> Any:
     """Create an enterprise search provider without importing providers eagerly.
 
-    The existing Qdrant VectorDB path is intentionally outside this factory
-    until the OS-048 compatibility adapter is implemented.
+    The legacy Qdrant VectorDB path is intentionally outside this factory. The
+    pre-customer launch does not require a Qdrant compatibility adapter.
     """
     normalized = provider.strip().lower()
     if normalized != "opensearch":
         supported = ", ".join(SUPPORTED_SEARCH_PROVIDERS)
         raise ValueError(
             f"Unknown enterprise search provider: '{provider}'. Supported: {supported}. "
-            "Qdrant remains on the legacy VectorDBClient path until OS-048."
+            "Qdrant is a separate local/demo fixture and is not a supported enterprise provider."
         )
 
     active_config = config or settings

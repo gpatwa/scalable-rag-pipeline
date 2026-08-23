@@ -1,6 +1,6 @@
 # ADR-OS-001: OpenSearch Enterprise Search Plane
 
-Status: Accepted for OS-010 through OS-060 implementation
+Status: Accepted for greenfield pre-customer implementation
 Date: 2026-08-22
 
 ## Context
@@ -32,9 +32,14 @@ other customer lake storage remain the systems of record. Neo4j remains the
 relationship and knowledge-graph store. Compass owns the provider-neutral
 query contract, policy scope, final ranking policy, evidence, and audit trail.
 
-Qdrant remains the local/demo vector provider and production fallback during
-migration. It is not removed until the relevance, tenant isolation,
-reliability, cost, and rollback gates in the execution plan have passed.
+Qdrant is a temporary local/demo fixture during implementation. There is no
+customer-facing backward-compatibility requirement and no obligation to retain
+Qdrant as a production fallback. The new OpenSearch contract may replace the
+legacy path directly after local validation.
+
+Operational safeguards still apply: index writes remain idempotent, tenant and
+ACL checks fail closed, and aliases provide rollback between index generations
+when an index operation is incomplete or fails.
 
 ## Authority Boundaries
 
@@ -72,7 +77,7 @@ customer truth.
 
 | Alternative | Decision | Reason |
 |---|---|---|
-| Qdrant only | Retain as fallback, not enterprise default | Strong vector path, but current lexical search remains a separate bounded API-side implementation and broader search features would need additional services. |
+| Qdrant only | Not selected | Strong vector path, but it does not provide the target lexical, hybrid, ACL, and recommendation search plane. No compatibility adapter is required for the pre-customer launch. |
 | Elasticsearch | Rejected | Comparable search capability, but the selected architecture uses OpenSearch and its open-source-compatible ecosystem. Adding Elastic-specific APIs would create the dependency this decision is intended to avoid. |
 | Azure AI Search | Not selected as the primary backend | Strong Azure-managed option and a candidate for an Azure-specific adapter, but the product requires a provider-neutral multi-cloud search plane with direct control of mappings, hybrid ranking, and rollout behavior. |
 | pgvector | Rejected as the enterprise search plane | Keeps vectors beside PostgreSQL, but would require Compass to build and operate the lexical, ranking, search lifecycle, and recommendation capabilities separately. |
@@ -91,7 +96,8 @@ Positive consequences:
 - Exact-term and semantic retrieval use one enterprise search contract.
 - Hybrid ranking, filters, aggregations, and candidate retrieval share one
   searchable document model.
-- Qdrant remains a safe rollback path while relevance and operations are proven.
+- Index generations and aliases provide operational rollback without preserving
+  the legacy Qdrant customer path.
 - Canonical data and search indexes have clear ownership and rebuild behavior.
 - Personalization can be added as Compass-owned ranking policy without putting
   user behavior or authorization logic in the search backend.
@@ -108,19 +114,17 @@ Costs and risks:
 - Cold-cache behavior, index lag, bulk throttling, and mapping changes require
   explicit operational controls.
 
-## Migration and Rollback
+## Greenfield Launch and Operational Rollback
 
 1. Define the provider-neutral contract and golden corpus.
 2. Build versioned mappings, aliases, durable indexing, and reconciliation.
-3. Run OpenSearch in opt-in local integration mode without changing the demo
-   default.
-4. Shadow OpenSearch beside Qdrant and compare overlap, ranking, ACL results,
-   latency, and failures without changing the user response.
+3. Run OpenSearch in local integration mode and validate the target demo path.
+4. Compare OpenSearch against the Qdrant plus lexical implementation offline
+   for overlap, ranking, ACL results, latency, and failures.
 5. Canary one design partner after human approval of relevance, security, and
    operations evidence.
-6. Keep Qdrant and the Python lexical fallback available for immediate rollback.
-7. Reopen Qdrant retirement only after the production evidence period and the
-   OS-089 decision review.
+6. Roll back failed index operations through aliases and a prior physical
+   generation; do not treat Qdrant as a required customer rollback path.
 
 ## Revisit Conditions
 

@@ -1,6 +1,6 @@
 # Enterprise Search and Recommendation OpenSearch Execution Plan
 
-Status: Approved architecture; implementation not started
+Status: Approved greenfield architecture; implementation in progress
 Audience: Engineering leads, reviewers, and delegated coding models
 Scope: Agentic Search and Support Resolution Intelligence under `services/api`,
 `apps/support-web`, and their deployment assets
@@ -12,8 +12,14 @@ filtered, personalized, and recommendation-candidate retrieval.
 
 PostgreSQL and object storage remain authoritative. OpenSearch is a rebuildable,
 derived index. Neo4j remains the relationship and knowledge-graph store.
-Qdrant remains the local/demo vector provider and production fallback until the
-OpenSearch relevance, isolation, reliability, and cost gates pass.
+Qdrant is retained only as a temporary local/demo fixture while the OpenSearch
+path is built. There is no customer-facing backward-compatibility promise and
+no requirement to preserve Qdrant as a production fallback.
+
+This is a pre-customer greenfield launch. Breaking API, mapping, persistence,
+and provider changes are allowed when they improve the target architecture.
+Operational recovery still requires idempotency, auditability, fail-closed
+authorization, and alias rollback for incomplete or failed index operations.
 
 Do not place OpenSearch-specific types in support domain models. All product
 code must depend on a versioned search contract so the backend remains
@@ -37,7 +43,8 @@ The first production release succeeds when it can:
 - Apply tenant and document ACL filters before scoring results.
 - Preserve source, model, schema, permission, and index versions in every trace.
 - Rebuild an index from canonical data without losing authoritative state.
-- Shadow Qdrant safely, compare results, canary traffic, and roll back.
+- Compare against the existing Qdrant plus lexical implementation offline while
+  building confidence in the new path.
 - Produce recommendation candidates using explicit behavioral and business
   signals without leaking one tenant's activity into another tenant.
 
@@ -140,13 +147,13 @@ Every result must include:
 2. Use an outbox and idempotent worker; do not rely on request-path dual writes.
 3. Keep provider payloads out of API response contracts.
 4. Version mappings, embeddings, analyzers, ranking configuration, and features.
-5. Use aliases for zero-downtime reindex and rollback.
+5. Use aliases for zero-downtime reindex and operational rollback.
 6. Redact or exclude prohibited content before indexing.
 7. Keep recommendation behavior events out of document payloads unless a
    reviewed feature contract explicitly materializes them.
 8. OpenSearch is first-stage retrieval. Business policy and final reranking stay
    in Compass.
-9. No Qdrant removal before the production cutover and rollback gates pass.
+9. Qdrant retirement is an implementation decision, not a customer compatibility gate.
 10. No analytics product imports. Shared primitives belong in
     `packages/platform_contracts` only when both products actually consume them.
 
@@ -157,7 +164,7 @@ Every result must include:
 | G0: Contract | Provider-neutral models, fake provider, and conformance tests pass |
 | G1: Index | Versioned mapping, aliases, outbox, worker, replay, and delete paths pass |
 | G2: Retrieval | BM25, vector, hybrid, ACL, filters, and explanations pass golden tests |
-| G3: Shadow | Qdrant/OpenSearch comparison runs with no user-visible behavior change |
+| G3: Relevance baseline | Offline Qdrant/OpenSearch comparison establishes recall, ranking, ACL, and latency evidence |
 | G4: Canary | Isolation, relevance, p95 latency, failure, and rollback gates pass |
 | G5: Personalization | Event, feature, policy, candidate, and evaluation contracts pass |
 | G6: Production | SLO, DR, security, cost, operations, and customer acceptance pass |
@@ -186,7 +193,7 @@ table explicitly says it shares ownership.
 |---|---|---|---|---|
 | OS-010 | Add optional OpenSearch dependency with an explicit compatible range | `services/api/requirements.txt` | OS-001 | Clean API dependency install succeeds |
 | OS-011 | Add OpenSearch endpoint, auth, TLS, timeout, and pool settings | `services/api/app/config.py`, config tests only | OS-001 | Dev and production validation tests fail on unsafe/missing production settings |
-| OS-012 | Add enterprise search provider factory with lazy OpenSearch selection | New `services/api/app/search/factory.py`, `services/api/tests/test_search_provider_factory.py` | OS-003, OS-011 | Unknown providers fail clearly; imports remain lazy; current Qdrant path is untouched |
+| OS-012 | Add enterprise search provider factory with lazy OpenSearch selection | New `services/api/app/search/factory.py`, `services/api/tests/test_search_provider_factory.py` | OS-003, OS-011 | Unknown providers fail clearly; imports remain lazy; no customer compatibility adapter is introduced |
 | OS-013 | Implement async connection lifecycle and health check | New `services/api/app/search/opensearch.py`, `services/api/tests/test_opensearch_provider.py` | OS-010 to OS-012 | Mocked client tests cover connect, close, healthy, auth failure, and timeout |
 | OS-014 | Normalize OpenSearch exceptions and retryability | `services/api/app/search/errors.py`, `services/api/tests/test_opensearch_provider.py` | OS-013 | Auth, mapping, throttling, timeout, and unavailable errors map deterministically |
 | OS-015 | Add bounded retry, backoff, and circuit-breaker hooks | `services/api/app/search/opensearch.py`, `services/api/tests/test_opensearch_provider.py` | OS-014 | Nonretryable errors run once; retryable errors stop at configured bound |
@@ -228,8 +235,8 @@ table explicitly says it shares ownership.
 | OS-044 | Normalize highlights and ranking explanation | `services/api/app/search/opensearch.py`, `services/api/tests/test_opensearch_queries.py` | OS-041 to OS-043 | Response contains no raw backend payload and preserves evidence versions |
 | OS-045 | Add pagination contract using stable search-after tokens | `services/api/app/search/models.py`, `services/api/app/search/opensearch.py`, `services/api/tests/test_opensearch_queries.py` | OS-043 | Duplicate/missing result tests pass across multiple pages |
 | OS-046 | Add timeout, cancellation, fallback, and circuit-breaker behavior | New `services/api/app/search/service.py`, `services/api/tests/test_search_service.py` | OS-015, OS-043 | Timeout does not leak partial unauthorized data; fallback is observable |
-| OS-047 | Adapt support search to `EnterpriseSearchProvider` | `services/api/app/support/indexer.py`, `services/api/tests/test_support_indexing.py` | OS-043, OS-046, OS-048 | Existing support API contract remains compatible; Python lexical fallback remains available |
-| OS-048 | Add Qdrant compatibility adapter to the new contract | New `services/api/app/search/qdrant_adapter.py`, `services/api/tests/test_search_qdrant_adapter.py` | OS-003 | Local demo can satisfy the new contract without OpenSearch running |
+| OS-047 | Adapt support search to `EnterpriseSearchProvider` | `services/api/app/support/indexer.py`, `services/api/tests/test_support_indexing.py` | OS-043, OS-046 | Support search is migrated to the target contract; no legacy provider compatibility is required |
+| OS-048 | Retire the legacy Qdrant search path after local OpenSearch validation | Removal/update of legacy support search wiring and targeted tests | OS-047, OS-050 | OpenSearch is the only supported enterprise path; local demo validation passes before removal |
 
 ### F. Local, cloud, and migration rollout
 
@@ -245,7 +252,7 @@ table explicitly says it shares ownership.
 | OS-057 | Run offline relevance and ACL benchmark | Evaluation fixtures and a versioned report only | OS-007, OS-043, OS-051 | Report includes Qdrant+lexical and OpenSearch baselines |
 | OS-058 | Add load, cold-cache, indexing, and failure tests | New load-test assets only | OS-051, OS-056 | Report captures p50/p95/p99, throughput, recovery, and filter recall |
 | OS-059 | Add canary percentage and instant rollback controls | Config, routing module, tests | OS-055 to OS-058 | Deterministic tenant routing and rollback tests pass |
-| OS-060 | Cut over one design-partner pilot after G4 approval | Configuration and release record only | OS-059, OS-080, OS-082, OS-084, and human approval | OpenSearch is primary for the pilot; Qdrant remains available for instant rollback |
+| OS-060 | Cut over one design-partner pilot after G4 approval | Configuration and release record only | OS-059, OS-080, OS-082, OS-084, and human approval | OpenSearch is primary for the pilot; alias and index-generation rollback evidence is available |
 
 ### G. Personalization and recommendation
 
@@ -304,7 +311,7 @@ Give a delegated model exactly one task ID and this plan. Require it to:
 1. Read the task, dependencies, owned files, and directly related existing code.
 2. Stop if a dependency is missing from its branch.
 3. Modify only owned files plus the smallest necessary import/export file.
-4. Preserve current API behavior unless the task explicitly changes a contract.
+4. Follow the target contract; breaking changes are allowed before customer launch.
 5. Add focused tests before reporting completion.
 6. Run the targeted tests, API suite, and `git diff --check`.
 7. Commit with `feat(search): OS-NNN short description` or the appropriate
@@ -315,7 +322,7 @@ Delegated models must not:
 
 - Deploy cloud resources.
 - Change production traffic or defaults.
-- Remove Qdrant, Python lexical fallback, or compatibility code.
+- Remove Qdrant or Python lexical fallback except in the explicit retirement task.
 - Weaken tenant, ACL, TLS, authentication, or audit behavior.
 - Add Elasticsearch clients or Elastic-specific APIs.
 - Introduce a second task's deliverable opportunistically.
@@ -330,7 +337,7 @@ docs/ENTERPRISE_SEARCH_OPENSEARCH_EXECUTION_PLAN.md.
 Repository rules:
 - Work only in the task's owned files and the smallest required import/export.
 - Do not implement later tasks.
-- Preserve existing behavior and Qdrant compatibility.
+- Build toward the target contract; do not add customer compatibility shims.
 - Never allow a query without tenant and ACL scope.
 - Do not deploy or change production configuration defaults.
 - Add focused tests for success, failure, tenant isolation, and idempotency where applicable.
@@ -406,8 +413,8 @@ Lower-capability models may prepare evidence but may not make these decisions:
 - Approve index topology exceptions for dedicated tenants.
 - Set production relevance, latency, availability, or cost thresholds.
 - Approve customer data and behavioral-event retention.
-- Enable shadowing, canary traffic, production cutover, or rollback.
-- Remove Qdrant or another rollback path.
+- Enable canary traffic or production cutover.
+- Remove Qdrant before the explicit retirement task and local validation gate.
 
 ## 14. Initial Definition of Done
 
@@ -418,5 +425,5 @@ The roadmap itself is execution-ready when:
 - Merge waves prevent known file collisions.
 - Delegated prompts contain stop conditions and validation commands.
 - Human-only decisions are explicit.
-- OpenSearch adoption does not change the current local demo or production
-  defaults until the relevant gate is approved.
+- There is no customer compatibility requirement. Local defaults may change
+  after the relevant OpenSearch validation gate is approved.
