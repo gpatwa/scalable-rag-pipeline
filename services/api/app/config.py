@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     OPENSEARCH_RETRY_ON_TIMEOUT: bool = True
     OPENSEARCH_POOL_MAXSIZE: int = 10
     OPENSEARCH_INDEX_ALIAS: str = "compass-support-search"
+    OPENSEARCH_VECTOR_DIMENSIONS: int = 768
+    OPENSEARCH_EMBEDDING_MODEL_VERSION: str = "default"
+
+    # -----------------------------------------------------------------
+    # Enterprise search indexing worker
+    # -----------------------------------------------------------------
+    SEARCH_INDEX_WORKER_POLL_SECONDS: float = 2.0
+    SEARCH_INDEX_WORKER_BATCH_SIZE: int = 10
+    SEARCH_INDEX_WORKER_LEASE_SECONDS: int = 900
+    SEARCH_INDEX_WORKER_RETRY_BASE_SECONDS: float = 5.0
+    SEARCH_INDEX_WORKER_RETRY_MAX_SECONDS: float = 300.0
 
     # -----------------------------------------------------------------
     # Graph DB — Provider Selection

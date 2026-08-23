@@ -83,6 +83,8 @@ try:
         SupportCustomer,
         SupportIndexRecord,
         SupportJob,
+        SupportSearchCheckpoint,
+        SupportSearchOutboxEvent,
         SupportSyncRun,
         SupportTicket,
         SupportTicketComment,

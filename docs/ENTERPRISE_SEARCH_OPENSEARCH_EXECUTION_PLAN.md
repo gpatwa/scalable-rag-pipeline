@@ -1,6 +1,13 @@
 # Enterprise Search and Recommendation OpenSearch Execution Plan
 
-Status: Approved greenfield architecture; implementation in progress
+Status: Approved greenfield architecture; indexing lifecycle through OS-039 implemented
+
+Current implementation checkpoint (2026-08-22): OS-001 through OS-035 are merged;
+OS-036 provides a separate search worker deployable, OS-037 provides checkpointed
+backfill and dry-run commands, OS-038 provides bounded source/index reconciliation,
+and OS-039 gates generation alias swaps on reconciliation results. These milestones
+are locally tested with provider fakes; live OpenSearch integration remains gated by
+the later local integration and deployment packets.
 Audience: Engineering leads, reviewers, and delegated coding models
 Scope: Agentic Search and Support Resolution Intelligence under `services/api`,
 `apps/support-web`, and their deployment assets

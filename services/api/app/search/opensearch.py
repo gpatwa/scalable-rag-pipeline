@@ -297,6 +297,52 @@ class OpenSearchProvider:
             errors=errors,
         )
 
+    async def list_documents(
+        self,
+        *,
+        index: str | None = None,
+        batch_size: int = 500,
+        max_documents: int = 100_000,
+    ) -> list[dict[str, Any]]:
+        """Return bounded source snapshots for reconciliation and reindex gates."""
+        self._require_connected()
+        target_index = index or self.config.OPENSEARCH_INDEX_ALIAS
+        documents: list[dict[str, Any]] = []
+        search_after: list[Any] | None = None
+        while len(documents) < max_documents:
+            body: dict[str, Any] = {
+                "size": min(max(batch_size, 1), 1000),
+                "query": {"match_all": {}},
+                "sort": [{"document_id": "asc"}],
+            }
+            if search_after is not None:
+                body["search_after"] = search_after
+            response = await self._with_retry(
+                "list_documents",
+                lambda: self._client.search(index=target_index, body=body),
+            )
+            hits = response.get("hits", {}).get("hits", []) if isinstance(response, dict) else []
+            if not isinstance(hits, list) or not hits:
+                break
+            for hit in hits:
+                if not isinstance(hit, dict):
+                    continue
+                source = hit.get("_source")
+                if not isinstance(source, dict):
+                    continue
+                copied = dict(source)
+                copied.setdefault("document_id", hit.get("_id"))
+                documents.append(copied)
+                if len(documents) >= max_documents:
+                    break
+            if len(hits) < body["size"]:
+                break
+            last_sort = hits[-1].get("sort")
+            if not isinstance(last_sort, list):
+                break
+            search_after = last_sort
+        return documents
+
     @staticmethod
     def _deduplicate_ids(document_ids: Sequence[str]) -> list[str]:
         unique: list[str] = []

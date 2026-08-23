@@ -221,6 +221,10 @@ class SearchIndexWorker:
         if self._wake_event is not None:
             self._wake_event.set()
 
+    @property
+    def worker_id(self) -> str:
+        return self._worker_id
+
     async def shutdown(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
