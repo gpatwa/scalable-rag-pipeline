@@ -49,6 +49,15 @@ def _normalize_text(value: Any, field_name: str) -> str:
     return normalized
 
 
+def _normalize_citation_labels(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("citation_labels must be a sequence of strings")
+    labels = tuple(_normalize_text(label, "citation label") for label in value)
+    if len(set(labels)) != len(labels):
+        raise ValueError("citation_labels must not contain duplicates")
+    return labels
+
+
 class IntentEntity(ResolutionModel):
     name: str = Field(min_length=1, max_length=128)
     value: str = Field(min_length=1, max_length=1000)
@@ -137,12 +146,75 @@ class SearchPlan(ResolutionModel):
         return self
 
 
+class ResolutionClaim(ResolutionModel):
+    text: str = Field(min_length=1, max_length=2000)
+    citation_labels: tuple[str, ...] = Field(min_length=1, max_length=16)
+
+    _normalize_text = field_validator("text", mode="before")(
+        lambda value: _normalize_text(value, "claim text")
+    )
+    _normalize_labels = field_validator("citation_labels", mode="before")(_normalize_citation_labels)
+
+
+class ResolutionCitation(ResolutionModel):
+    label: str = Field(min_length=1, max_length=64)
+    source_id: str = Field(min_length=1, max_length=255)
+
+    _normalize_label = field_validator("label", mode="before")(
+        lambda value: _normalize_text(value, "citation label")
+    )
+    _normalize_source_id = field_validator("source_id", mode="before")(
+        lambda value: _normalize_text(value, "citation source ID")
+    )
+
+
+class ResolutionStep(ResolutionModel):
+    instruction: str = Field(min_length=1, max_length=2000)
+    citation_labels: tuple[str, ...] = Field(default=(), max_length=16)
+
+    _normalize_instruction = field_validator("instruction", mode="before")(
+        lambda value: _normalize_text(value, "step instruction")
+    )
+    _normalize_labels = field_validator("citation_labels", mode="before")(_normalize_citation_labels)
+
+
+class ActionProposal(ResolutionModel):
+    description: str = Field(min_length=1, max_length=2000)
+
+    _normalize_description = field_validator("description", mode="before")(
+        lambda value: _normalize_text(value, "action proposal description")
+    )
+
+
+class GroundedResolutionOutcome(ResolutionModel):
+    claims: tuple[ResolutionClaim, ...] = Field(min_length=1, max_length=32)
+    citations: tuple[ResolutionCitation, ...] = Field(min_length=1, max_length=64)
+    steps: tuple[ResolutionStep, ...] = Field(min_length=1, max_length=32)
+    customer_response: str = Field(min_length=1, max_length=5000)
+    confidence: ConfidenceLevel
+    abstention: bool
+    next_action: str = Field(min_length=1, max_length=255)
+    action_proposal: ActionProposal | None = None
+
+    _normalize_customer_response = field_validator("customer_response", mode="before")(
+        lambda value: _normalize_text(value, "customer response")
+    )
+    _normalize_next_action = field_validator("next_action", mode="before")(
+        lambda value: _normalize_text(value, "next action")
+    )
+
+
 __all__ = [
     "ConfidenceLevel",
+    "ActionProposal",
+    "GroundedResolutionOutcome",
     "IntentConstraint",
     "IntentEntity",
     "QueryMode",
     "QueryVariant",
+    "ResolutionClaim",
+    "ResolutionCitation",
+    "ResolutionStep",
     "SearchPlan",
     "SupportIntent",
     "SupportIntentType",

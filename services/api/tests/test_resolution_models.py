@@ -3,10 +3,15 @@ from pydantic import ValidationError
 
 from app.resolution.models import (
     ConfidenceLevel,
+    ActionProposal,
+    GroundedResolutionOutcome,
     IntentConstraint,
     IntentEntity,
     QueryMode,
     QueryVariant,
+    ResolutionClaim,
+    ResolutionCitation,
+    ResolutionStep,
     SearchPlan,
     SupportIntent,
     SupportIntentType,
@@ -93,3 +98,42 @@ def test_nested_models_are_provider_neutral():
     assert IntentEntity(name="id", value="A-1")
     assert IntentConstraint(name="status", value="open")
     assert SupportIntentType.HOW_TO.value == "how_to"
+
+
+def _outcome() -> GroundedResolutionOutcome:
+    return GroundedResolutionOutcome(
+        claims=[{"text": "The export timed out", "citation_labels": ["[1]"]}],
+        citations=[{"label": "[1]", "source_id": "ticket-42"}],
+        steps=[{"instruction": "Retry the export", "citation_labels": ["[1]"]}],
+        customer_response="Please retry the export and contact support if it fails again.",
+        confidence="medium",
+        abstention=False,
+        next_action="suggest_agent_response",
+        action_proposal={"description": "Offer guided retry assistance"},
+    )
+
+
+def test_grounded_resolution_contract_is_frozen_and_strict():
+    outcome = _outcome()
+    assert outcome.claims[0].citation_labels == ("[1]",)
+    assert outcome.citations[0].source_id == "ticket-42"
+    with pytest.raises(ValidationError):
+        outcome.customer_response = "changed"
+    with pytest.raises(ValidationError):
+        GroundedResolutionOutcome(
+            **outcome.model_dump(), unexpected="x"
+        )
+
+
+@pytest.mark.parametrize(
+    "model, values",
+    [
+        (ResolutionClaim, {"text": " ", "citation_labels": ["[1]"]}),
+        (ResolutionCitation, {"label": "[1]", "source_id": "   "}),
+        (ResolutionStep, {"instruction": "retry", "citation_labels": [" "]}),
+        (ActionProposal, {"description": "  "}),
+    ],
+)
+def test_resolution_models_reject_blank_values(model, values):
+    with pytest.raises(ValidationError):
+        model(**values)
