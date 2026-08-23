@@ -7,6 +7,7 @@ from app.resolution.evaluation import (
     abstention_accuracy,
     citation_precision,
     evaluate_resolution,
+    compare_ranking_stages,
     supported_claim_rate,
 )
 
@@ -49,3 +50,49 @@ def test_negative_telemetry_is_rejected(field):
     values[field] = -1
     with pytest.raises(ValueError, match="non-negative"):
         evaluate_resolution(**values)
+
+
+def test_ranking_comparison_matches_hand_computed_values():
+    report = compare_ranking_stages(
+        baseline_ids=["doc-c", "doc-b", "doc-a"],
+        reranked_ids=["doc-a", "doc-b", "doc-c"],
+        relevance={"doc-a": 2, "doc-b": 1},
+        baseline_supported_document_ids=["doc-b"],
+        reranked_supported_document_ids=["doc-a", "doc-b"],
+        baseline_cost=0.001,
+        reranked_cost=0.003,
+        baseline_latency_ms=10,
+        reranked_latency_ms=25,
+        k=2,
+    )
+    assert report.baseline.recall_at_k == pytest.approx(0.5)
+    assert report.reranked.recall_at_k == pytest.approx(1.0)
+    assert report.baseline.mean_reciprocal_rank == pytest.approx(0.5)
+    assert report.reranked.mean_reciprocal_rank == pytest.approx(1.0)
+    assert report.baseline.supported_evidence_rate == pytest.approx(0.5)
+    assert report.reranked.supported_evidence_rate == pytest.approx(1.0)
+    assert report.deltas.estimated_cost == pytest.approx(0.002)
+    assert report.deltas.latency_ms == pytest.approx(15)
+
+
+def test_ranking_comparison_rejects_mismatched_or_duplicate_ids():
+    args = dict(
+        baseline_ids=["doc-a"], reranked_ids=["doc-b"], relevance={},
+        baseline_supported_document_ids=[], reranked_supported_document_ids=[],
+    )
+    with pytest.raises(ValueError, match="same document IDs"):
+        compare_ranking_stages(**args)
+    args["reranked_ids"] = ["doc-a", "doc-a"]
+    with pytest.raises(ValueError, match="unique"):
+        compare_ranking_stages(**args)
+
+
+@pytest.mark.parametrize("field", ["baseline_cost", "reranked_cost", "baseline_latency_ms", "reranked_latency_ms"])
+def test_ranking_comparison_rejects_negative_cost_or_latency(field):
+    args = dict(
+        baseline_ids=[], reranked_ids=[], relevance={},
+        baseline_supported_document_ids=[], reranked_supported_document_ids=[],
+    )
+    args[field] = -1
+    with pytest.raises(ValueError, match="non-negative"):
+        compare_ranking_stages(**args)

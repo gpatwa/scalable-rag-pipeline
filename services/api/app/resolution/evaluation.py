@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Mapping, Sequence
+
+from app.search.evaluation import mean_reciprocal_rank, ndcg_at_k, recall_at_k
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,100 @@ class ResolutionEvaluationReport:
     input_tokens: int
     output_tokens: int
     estimated_cost: float
+
+
+@dataclass(frozen=True)
+class RankingStageMetrics:
+    """Quality and operational measurements for one ranking stage."""
+
+    recall_at_k: float
+    mean_reciprocal_rank: float
+    ndcg_at_k: float
+    supported_evidence_rate: float
+    estimated_cost: float
+    latency_ms: float
+
+
+@dataclass(frozen=True)
+class RankingComparisonReport:
+    """Deterministic comparison of the baseline and reranked result lists."""
+
+    k: int
+    baseline: RankingStageMetrics
+    reranked: RankingStageMetrics
+    deltas: RankingStageMetrics
+
+
+def supported_evidence_rate(
+    retrieved_ids: Sequence[str],
+    supported_document_ids: Sequence[str],
+    *,
+    k: int = 10,
+) -> float:
+    """Return the fraction of unique top-K results with supported evidence."""
+    if k < 1:
+        raise ValueError("k must be at least 1")
+    retrieved = list(dict.fromkeys(retrieved_ids))[:k]
+    if not retrieved:
+        return 0.0
+    supported = set(supported_document_ids)
+    return sum(document_id in supported for document_id in retrieved) / len(retrieved)
+
+
+def compare_ranking_stages(
+    *,
+    baseline_ids: Sequence[str],
+    reranked_ids: Sequence[str],
+    relevance: Mapping[str, int],
+    baseline_supported_document_ids: Sequence[str],
+    reranked_supported_document_ids: Sequence[str],
+    baseline_cost: float = 0.0,
+    reranked_cost: float = 0.0,
+    baseline_latency_ms: float = 0.0,
+    reranked_latency_ms: float = 0.0,
+    k: int = 10,
+    minimum_grade: int = 1,
+) -> RankingComparisonReport:
+    """Compare two result lists without invoking ranking or model providers."""
+    if k < 1:
+        raise ValueError("k must be at least 1")
+    if set(baseline_ids) != set(reranked_ids):
+        raise ValueError("baseline and reranked results must contain the same document IDs")
+    if len(set(baseline_ids)) != len(baseline_ids) or len(set(reranked_ids)) != len(reranked_ids):
+        raise ValueError("ranking results must contain unique document IDs")
+    for name, value in (
+        ("baseline_cost", baseline_cost),
+        ("reranked_cost", reranked_cost),
+        ("baseline_latency_ms", baseline_latency_ms),
+        ("reranked_latency_ms", reranked_latency_ms),
+    ):
+        _validate_non_negative(name, value)
+
+    def metrics(ids: Sequence[str], supported: Sequence[str], cost: float, latency: float) -> RankingStageMetrics:
+        return RankingStageMetrics(
+            recall_at_k(ids, relevance, k=k, minimum_grade=minimum_grade),
+            mean_reciprocal_rank(ids, relevance, k=k, minimum_grade=minimum_grade),
+            ndcg_at_k(ids, relevance, k=k),
+            supported_evidence_rate(ids, supported, k=k),
+            cost,
+            latency,
+        )
+
+    baseline = metrics(baseline_ids, baseline_supported_document_ids, baseline_cost, baseline_latency_ms)
+    reranked = metrics(reranked_ids, reranked_supported_document_ids, reranked_cost, reranked_latency_ms)
+    return RankingComparisonReport(
+        k=k,
+        baseline=baseline,
+        reranked=reranked,
+        deltas=RankingStageMetrics(
+            reranked.recall_at_k - baseline.recall_at_k,
+            reranked.mean_reciprocal_rank - baseline.mean_reciprocal_rank,
+            reranked.ndcg_at_k - baseline.ndcg_at_k,
+            reranked.supported_evidence_rate - baseline.supported_evidence_rate,
+            reranked.estimated_cost - baseline.estimated_cost,
+            reranked.latency_ms - baseline.latency_ms,
+        ),
+    )
 
 
 def citation_precision(cited_labels: Sequence[str], authorized_labels: Sequence[str]) -> float:
