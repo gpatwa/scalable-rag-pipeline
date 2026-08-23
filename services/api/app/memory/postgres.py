@@ -92,6 +92,13 @@ try:
 except ImportError:
     pass
 
+# Import enterprise search interaction events so the table is available for
+# local create_all startup and Alembic autogeneration.
+try:
+    from app.search.persistence import SearchInteractionEventRecord  # noqa: F401
+except ImportError:
+    pass
+
 # 3. Async Engine & Session
 #    The engine is lazily initialised so that secrets injected via
 #    Key Vault during the lifespan hook are available before the first
