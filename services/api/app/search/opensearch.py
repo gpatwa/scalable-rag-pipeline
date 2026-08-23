@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Awaitable
 from urllib.parse import urlsplit
 
 from app.config import Settings, settings
-from app.search.errors import normalize_opensearch_exception
+from app.search.errors import OpenSearchError, normalize_opensearch_exception
 from app.search.mappings import SUPPORT_SEARCH_MAPPING_VERSION, build_support_index_definition
 from app.search.models import SearchHealth, SearchIndexSpec
 
@@ -31,6 +33,11 @@ class OpenSearchProvider:
     this foundation small makes connection failures observable before rollout.
     """
 
+    RETRY_BASE_DELAY_SECONDS = 0.1
+    RETRY_MAX_DELAY_SECONDS = 2.0
+    CIRCUIT_FAILURE_THRESHOLD = 3
+    CIRCUIT_RESET_SECONDS = 30.0
+
     def __init__(
         self,
         *,
@@ -43,6 +50,8 @@ class OpenSearchProvider:
         self._client_factory = client_factory or _default_client_factory
         self._connected = False
         self._server_info: dict[str, Any] = {}
+        self._consecutive_failures = 0
+        self._circuit_open_until: float | None = None
 
     async def connect(self) -> None:
         if self._connected:
@@ -52,10 +61,10 @@ class OpenSearchProvider:
             self._client = self._client_factory(self._client_options())
 
         try:
-            server_info = await self._client.info()
-        except Exception as error:
+            server_info = await self._with_retry("connect", self._client.info)
+        except Exception:
             self._connected = False
-            raise normalize_opensearch_exception(error, operation="connect") from error
+            raise
 
         self._server_info = server_info if isinstance(server_info, dict) else {}
         self._connected = True
@@ -76,10 +85,7 @@ class OpenSearchProvider:
                 details={"provider": "opensearch", "connected": False},
             )
 
-        try:
-            cluster = await self._client.cluster.health()
-        except Exception as error:
-            raise normalize_opensearch_exception(error, operation="health") from error
+        cluster = await self._with_retry("health", self._client.cluster.health)
         cluster_status = str(cluster.get("status", "unknown")) if isinstance(cluster, dict) else "unknown"
         status = "ready" if cluster_status in {"green", "yellow"} else "not_ready"
         details: dict[str, Any] = {
@@ -114,16 +120,16 @@ class OpenSearchProvider:
         }
 
         if not await self._index_exists(index_name):
-            try:
-                await self._client.indices.create(index=index_name, body=definition)
-            except Exception as error:
-                raise normalize_opensearch_exception(error, operation="create_index") from error
+            await self._with_retry(
+                "create_index",
+                lambda: self._client.indices.create(index=index_name, body=definition),
+            )
             return
 
-        try:
-            existing = await self._client.indices.get_mapping(index=index_name)
-        except Exception as error:
-            raise normalize_opensearch_exception(error, operation="get_mapping") from error
+        existing = await self._with_retry(
+            "get_mapping",
+            lambda: self._client.indices.get_mapping(index=index_name),
+        )
         existing_mapping = self._extract_mapping(existing, index_name)
         if existing_mapping != definition["mappings"]:
             raise ValueError(
@@ -176,10 +182,10 @@ class OpenSearchProvider:
             raise RuntimeError("OpenSearch provider must be connected before index operations")
 
     async def _index_exists(self, index_name: str) -> bool:
-        try:
-            response = await self._client.indices.exists(index=index_name)
-        except Exception as error:
-            raise normalize_opensearch_exception(error, operation="index_exists") from error
+        response = await self._with_retry(
+            "index_exists",
+            lambda: self._client.indices.exists(index=index_name),
+        )
         if isinstance(response, bool):
             return response
         body = getattr(response, "body", None)
@@ -242,6 +248,57 @@ class OpenSearchProvider:
             raise ValueError("OPENSEARCH_AUTH_MODE must be one of: none, basic, api_key")
 
         return options
+
+    async def _with_retry(self, operation: str, callback: Callable[[], Awaitable[Any]]) -> Any:
+        self._ensure_circuit_closed(operation)
+        max_retries = max(0, int(self.config.OPENSEARCH_MAX_RETRIES))
+        for attempt in range(max_retries + 1):
+            try:
+                result = await callback()
+            except Exception as error:
+                normalized = normalize_opensearch_exception(error, operation=operation)
+                if not normalized.retryable or attempt >= max_retries:
+                    self._record_failure(normalized)
+                    raise normalized from error
+                await asyncio.sleep(self._retry_delay(attempt))
+            else:
+                self._record_success()
+                return result
+
+        raise AssertionError("OpenSearch retry loop exited without a result or exception")
+
+    def _retry_delay(self, retry_number: int) -> float:
+        return min(self.RETRY_MAX_DELAY_SECONDS, self.RETRY_BASE_DELAY_SECONDS * (2**retry_number))
+
+    def _ensure_circuit_closed(self, operation: str) -> None:
+        if self._circuit_open_until is None:
+            return
+        if time.monotonic() >= self._circuit_open_until:
+            self.reset_circuit()
+            return
+        raise OpenSearchError(
+            code="circuit_open",
+            message=f"OpenSearch {operation} blocked by circuit breaker",
+            retryable=True,
+            operation=operation,
+        )
+
+    def _record_failure(self, error: Any) -> None:
+        if not getattr(error, "retryable", False):
+            return
+        self._consecutive_failures += 1
+        threshold = max(1, int(getattr(self, "CIRCUIT_FAILURE_THRESHOLD", 3)))
+        if self._consecutive_failures >= threshold:
+            self._circuit_open_until = time.monotonic() + float(self.CIRCUIT_RESET_SECONDS)
+
+    def _record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._circuit_open_until = None
+
+    def reset_circuit(self) -> None:
+        """Close the local circuit after an operator or readiness reset."""
+        self._consecutive_failures = 0
+        self._circuit_open_until = None
 
 
 def _is_not_found(error: BaseException) -> bool:

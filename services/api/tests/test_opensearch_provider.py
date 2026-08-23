@@ -116,6 +116,18 @@ class StatusError(Exception):
         self.info = info
 
 
+class SequenceClient(FakeClient):
+    def __init__(self, errors):
+        super().__init__()
+        self.errors = list(errors)
+
+    async def info(self):
+        self.info_calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.info_response
+
+
 @pytest.mark.parametrize(
     ("error", "code", "retryable"),
     [
@@ -153,6 +165,82 @@ async def test_provider_wraps_transport_errors_with_operation_context():
 
     assert raised.value.code == "unavailable"
     assert raised.value.operation == "connect"
+
+
+@pytest.mark.asyncio
+async def test_retryable_errors_use_bounded_exponential_backoff(monkeypatch):
+    delays = []
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.search.opensearch.asyncio.sleep", fake_sleep)
+    client = SequenceClient([StatusError(503), StatusError(503)])
+    provider = OpenSearchProvider(config=_config(OPENSEARCH_MAX_RETRIES=2), client=client)
+
+    await provider.connect()
+
+    assert client.info_calls == 3
+    assert delays == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_retryable_errors_stop_at_configured_bound(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("app.search.opensearch.asyncio.sleep", fake_sleep)
+    client = SequenceClient([StatusError(503), StatusError(503), StatusError(503), StatusError(503)])
+    provider = OpenSearchProvider(config=_config(OPENSEARCH_MAX_RETRIES=2), client=client)
+
+    from app.search.errors import OpenSearchError
+
+    with pytest.raises(OpenSearchError) as raised:
+        await provider.connect()
+
+    assert raised.value.code == "unavailable"
+    assert client.info_calls == 3
+
+
+@pytest.mark.asyncio
+async def test_nonretryable_error_runs_once(monkeypatch):
+    async def fail_if_called(_delay):
+        raise AssertionError("nonretryable error should not sleep")
+
+    monkeypatch.setattr("app.search.opensearch.asyncio.sleep", fail_if_called)
+    client = SequenceClient([StatusError(401), StatusError(401)])
+    provider = OpenSearchProvider(config=_config(OPENSEARCH_MAX_RETRIES=3), client=client)
+
+    from app.search.errors import OpenSearchError
+
+    with pytest.raises(OpenSearchError) as raised:
+        await provider.connect()
+
+    assert raised.value.code == "auth"
+    assert client.info_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_blocks_after_repeated_exhausted_failures(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("app.search.opensearch.asyncio.sleep", fake_sleep)
+    client = SequenceClient([StatusError(503), StatusError(503), StatusError(503)])
+    provider = OpenSearchProvider(config=_config(OPENSEARCH_MAX_RETRIES=0), client=client)
+    provider.CIRCUIT_FAILURE_THRESHOLD = 2
+
+    from app.search.errors import OpenSearchError
+
+    for _ in range(2):
+        with pytest.raises(OpenSearchError):
+            await provider.connect()
+
+    with pytest.raises(OpenSearchError) as raised:
+        await provider.connect()
+
+    assert raised.value.code == "circuit_open"
+    assert client.info_calls == 2
 
 
 class FakeIndices:
