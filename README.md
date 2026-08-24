@@ -169,6 +169,8 @@ See [Architecture docs](docs/architecture.md#11-control-plane--data-plane-archit
 | [Roadmap](docs/ROADMAP.md) | Enterprise features, SaaS connectors, zero trust roadmap |
 | [Enterprise Analytics Execution Plan](docs/ENTERPRISE_ANALYTICS_EXECUTION_PLAN.md) | Catalog-neutral analytics architecture, phased delivery gates, and model-ready delegation plan |
 | [Enterprise Analytics Task Packets](docs/execution/enterprise-analytics/README.md) | Initial bounded assignments with file ownership, acceptance tests, and handoff rules |
+| [Immersive Discovery Execution Plan](docs/IMMERSIVE_DISCOVERY_EXECUTION_PLAN.md) | Separate Roblox-like discovery vertical, synthetic-data strategy, multi-stage ranking, and Luna-ready task graph |
+| [Immersive Discovery Task Packets](docs/execution/immersive-discovery/README.md) | Bounded IMD assignments, dispatch waves, acceptance evidence, and local-only execution rules |
 
 ## Make Commands
 

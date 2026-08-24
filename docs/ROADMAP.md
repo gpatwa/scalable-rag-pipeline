@@ -9,6 +9,9 @@
 > The bounded LLM reasoning, grounded resolution, and typed action program is
 > maintained in
 > [LLM Search and Resolution Intelligence Execution Plan](LLM_RESOLUTION_INTELLIGENCE_EXECUTION_PLAN.md).
+> The separate Roblox-like search, recommendation, and personalization vertical
+> is maintained in the
+> [Immersive Discovery Vertical Execution Plan](IMMERSIVE_DISCOVERY_EXECUTION_PLAN.md).
 
 ## Current State (v1.0)
 
