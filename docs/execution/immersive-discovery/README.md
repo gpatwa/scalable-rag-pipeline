@@ -8,10 +8,11 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current dispatch status: **Wave 0 only**. IMD-003 and later are backlog rows,
-not executable prompts, until the integration owner creates and reviews their
-exact packet one merge wave ahead. This just-in-time packet rule keeps owned
-paths and validation commands aligned with the code that actually merged.
+Current checkpoint: **Wave 0 complete**. IMD-001 and IMD-002 are merged and
+validated. IMD-003 and later are backlog rows, not executable prompts, until the
+integration owner creates and reviews their exact packet one merge wave ahead.
+This just-in-time packet rule keeps owned paths and validation commands aligned
+with the code that actually merged.
 
 ## First Dispatch Wave
 
