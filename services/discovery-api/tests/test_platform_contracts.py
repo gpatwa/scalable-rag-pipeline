@@ -10,7 +10,6 @@ from packages.platform_contracts import (
     ImpressionToken,
 )
 
-
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 COMPONENT = DiscoveryComponentVersion(
     component_type="schema",

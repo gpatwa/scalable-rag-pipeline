@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "golden"
 AGE_ORDER = {"E": 0, "E10": 1, "T": 2}
 EXPERIENCE_ENUMS = {
@@ -50,10 +49,10 @@ def test_golden_corpus_counts_order_enums_and_synthetic_markers():
     judgments = _load("judgments.json")
     policy_cases = _load("policy_cases.json")
 
-    experience_ids = _ids(experiences, "experience_id")
-    user_ids = _ids(users, "user_id")
+    _ids(experiences, "experience_id")
+    _ids(users, "user_id")
     _ids(relationships, "relationship_id")
-    query_ids = _ids(queries, "query_id")
+    _ids(queries, "query_id")
     _ids(judgments, "judgment_id")
     _ids(policy_cases, "case_id")
 
