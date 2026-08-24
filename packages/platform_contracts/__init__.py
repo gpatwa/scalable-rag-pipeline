@@ -1,4 +1,10 @@
 from packages.platform_contracts.aiops import ComponentVersion, DriftSignal, RolloutState, ValidatedCorrection
+from packages.platform_contracts.discovery import (
+    DecisionTrace,
+    DiscoveryComponentVersion,
+    DiscoveryRequestContext,
+    ImpressionToken,
+)
 from packages.platform_contracts.analytics_planning import (
     AnalyticsAmbiguity,
     AnalyticsClarificationState,
@@ -57,4 +63,8 @@ __all__ = [
     "DrillResult",
     "RetentionPolicy",
     "SLOTarget",
+    "DiscoveryRequestContext",
+    "DiscoveryComponentVersion",
+    "ImpressionToken",
+    "DecisionTrace",
 ]
