@@ -8,14 +8,13 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-003 complete**. IMD-001 through IMD-003 are merged and
-validated. IMD-004 and later are backlog rows, not executable prompts, until the
+Current checkpoint: **IMD-004 complete**. IMD-001 through IMD-004 are merged and
+validated. IMD-005 and later are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
 with the code that actually merged.
 
-Next packet: [IMD-004](IMD-004-domain-contracts.md), immersive catalog, user,
-context, and eligibility contracts.
+Next packetization target: IMD-005, versioned interaction-event contracts.
 
 ## First Dispatch Wave
 
