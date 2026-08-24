@@ -155,6 +155,7 @@ See [Architecture docs](docs/architecture.md#11-control-plane--data-plane-archit
 | [Architecture & Design](docs/architecture.md) | System design, agentic pipeline, retrieval strategies, multi-tenancy, CP/DP split |
 | [AWS Deployment](docs/deployment-aws.md) | EKS provisioning, staging/prod environments, bootstrap, cost management |
 | [Azure Deployment](docs/deployment-azure.md) | AKS provisioning, Workload Identity, Key Vault integration |
+| [Azure Remote Docker Development](docs/azure-remote-dev.md) | Automated Azure VM development host, Docker bootstrap, sync, tunnels, and lifecycle |
 | [Azure Analytics Deployment](docs/deployment-azure.md#analytics-product) | Separate analytics API/web images, Helm releases, Key Vault sync, and manual workflow |
 | [Public Landing](docs/deployment-azure.md#public-landing-deployment) | Azure Static Web Apps production landing deployment |
 | [API Reference & Chat UI](docs/api-reference.md) | Endpoints (monolith + CP/DP), streaming protocol, sample queries, Chat UI |
@@ -204,6 +205,9 @@ Split-Plane:
   make test-all              Run all tests (198 tests across 3 suites)
 
 Cloud:
+  make azure-dev-up          Provision remote Azure Docker development host
+  make azure-dev-tunnel      Forward remote app/API/search ports locally
+  make azure-dev-stop        Deallocate remote development compute
   make infra                 Provision AWS prod infrastructure (Terraform)
   make infra-staging         Provision AWS staging infrastructure
   make bootstrap             Bootstrap prod EKS cluster

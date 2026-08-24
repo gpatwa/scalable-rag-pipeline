@@ -67,6 +67,7 @@ data/test-docs/*.docx
 # Docker / Misc
 # ============================================================
 *.log
+.local/
 .pytest_cache/
 .coverage
 htmlcov/

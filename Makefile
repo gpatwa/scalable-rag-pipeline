@@ -4,6 +4,7 @@
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure deploy-analytics-azure deploy-landing-azure destroy-azure \
        pause-azure resume-azure import-azure \
+       azure-dev-up azure-dev-sync azure-dev-start azure-dev-stop azure-dev-status azure-dev-ssh azure-dev-tunnel azure-dev-destroy \
        verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
        setup lint format \
        dev-control-plane dev-data-plane dev-split test-control-plane test-data-plane test-all
@@ -53,6 +54,14 @@ help:
 	@echo "    make resume-azure      - Resume: start Postgres + App Service back up (Redis recreated on next deploy)"
 	@echo "    make import-azure      - Import manually-created resources into Terraform state (run once)"
 	@echo "    make destroy-azure     - Tear down ALL Azure resources + verify"
+	@echo "    make azure-dev-up      - Provision/update remote Docker development VM and start Compose"
+	@echo "    make azure-dev-sync    - Sync this checkout to the remote Docker VM"
+	@echo "    make azure-dev-start   - Start the VM and remote Compose services"
+	@echo "    make azure-dev-stop    - Deallocate the VM while preserving Docker volumes"
+	@echo "    make azure-dev-status  - Show remote Docker VM status"
+	@echo "    make azure-dev-ssh     - Open an SSH shell on the remote Docker VM"
+	@echo "    make azure-dev-tunnel  - Forward local app/API/search ports over SSH"
+	@echo "    make azure-dev-destroy - Destroy the isolated remote-dev environment"
 	@echo ""
 	@echo "  Developer Setup:"
 	@echo "    make setup         - Install deps + pre-commit hooks"
@@ -329,6 +338,34 @@ destroy-azure:
 	@echo ""
 	@echo "Running post-destroy verification (Azure)..."
 	./scripts/verify-cleanup-azure.sh
+
+# ============================================================
+# AZURE REMOTE DOCKER DEVELOPMENT
+# ============================================================
+
+azure-dev-up:
+	./scripts/azure_dev.sh up
+
+azure-dev-sync:
+	./scripts/azure_dev.sh sync
+
+azure-dev-start:
+	./scripts/azure_dev.sh start
+
+azure-dev-stop:
+	./scripts/azure_dev.sh stop
+
+azure-dev-status:
+	./scripts/azure_dev.sh status
+
+azure-dev-ssh:
+	./scripts/azure_dev.sh ssh
+
+azure-dev-tunnel:
+	./scripts/azure_dev.sh tunnel
+
+azure-dev-destroy:
+	./scripts/azure_dev.sh destroy --yes
 
 verify-cleanup-azure:
 	./scripts/verify-cleanup-azure.sh
