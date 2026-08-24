@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.config import settings
 from app.service import AnalyticsService
@@ -58,6 +59,12 @@ async def health() -> AnalyticsHealthResponse:
         database_configured=analytics_service.database_configured,
         llm_configured=analytics_service.llm_configured,
     )
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    """Prometheus scrape endpoint for process/runtime metrics."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get(

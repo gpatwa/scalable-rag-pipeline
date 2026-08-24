@@ -45,6 +45,19 @@ make azure-dev-ssh
 make azure-dev-destroy
 ```
 
+The tunnel also includes the operations surfaces. It prints the actual local
+ports and chooses a free port when the standard one is already occupied:
+
+| Surface | Remote port | Preferred local port |
+|---|---:|---:|
+| Grafana operations | 3000 | 3000 |
+| Prometheus | 9090 | 9090 |
+| OpenSearch Dashboards | 5601 | 5601 |
+
+Grafana uses the local development credentials `admin` / `admin` unless
+`GRAFANA_ADMIN_PASSWORD` is supplied to the remote Compose environment. These
+UIs are reachable only through the SSH tunnel.
+
 `azure-dev-destroy` requires `AZURE_DEV_CONFIRM_DESTROY=1` or an explicit
 `--yes` argument so an accidental shell command cannot delete the environment.
 
@@ -91,5 +104,6 @@ a predictable offset to every tunnel.
   HA, public ingress, managed identity wiring, or staging approval semantics.
 
 The local Docker services remain PostgreSQL, Redis, Qdrant, Neo4j, OpenSearch,
-and MinIO. Azure-specific managed-service validation belongs in the separate
-staging workflow.
+and MinIO. The opt-in observability profile adds Prometheus, Grafana, cAdvisor,
+PostgreSQL/Redis/OpenSearch exporters, and OpenSearch Dashboards. Azure-specific
+managed-service validation belongs in the separate staging workflow.

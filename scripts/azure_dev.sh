@@ -134,7 +134,8 @@ wait_for_bootstrap() {
 }
 
 write_remote_env() {
-  ssh_exec bash -s <<'EOF'
+  local grafana_password="${GRAFANA_ADMIN_PASSWORD:-admin}"
+  ssh_exec env "GRAFANA_ADMIN_PASSWORD=$grafana_password" bash -s <<'EOF'
 set -eu
 cat > /opt/compass/.env.azure-dev <<'ENV'
 ENV=dev
@@ -148,6 +149,7 @@ S3_BUCKET_NAME=rag-platform-docs-dev
 LLM_PROVIDER=ray
 EMBED_PROVIDER=ray
 ENV
+printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_ADMIN_PASSWORD" >> /opt/compass/.env.azure-dev
 EOF
 }
 
@@ -177,6 +179,7 @@ cd /opt/compass
 docker compose --env-file .env.azure-dev up -d
 docker compose --env-file .env.azure-dev --profile search up -d opensearch
 docker compose --env-file .env.azure-dev --profile products up --build -d
+docker compose --env-file .env.azure-dev --profile observability up -d
 EOF
 }
 
@@ -256,6 +259,7 @@ tunnel() {
   terraform_init
   local web_port analytics_web_port api_port analytics_api_port search_port
   local qdrant_port neo4j_http_port neo4j_bolt_port
+  local grafana_port prometheus_port dashboards_port
   web_port="$(pick_tunnel_port 5173)"
   analytics_web_port="$(pick_tunnel_port 5174)"
   api_port="$(pick_tunnel_port 8080)"
@@ -264,11 +268,17 @@ tunnel() {
   qdrant_port="$(pick_tunnel_port 6333)"
   neo4j_http_port="$(pick_tunnel_port 7474)"
   neo4j_bolt_port="$(pick_tunnel_port 7687)"
+  grafana_port="$(pick_tunnel_port 3000)"
+  prometheus_port="$(pick_tunnel_port 9090)"
+  dashboards_port="$(pick_tunnel_port 5601)"
   log "forwarding Azure services; press Ctrl-C to close"
   log "support web: http://127.0.0.1:$web_port"
   log "analytics web: http://127.0.0.1:$analytics_web_port"
   log "support API: http://127.0.0.1:$api_port"
   log "analytics API: http://127.0.0.1:$analytics_api_port"
+  log "Grafana operations: http://127.0.0.1:$grafana_port (admin / local dev password)"
+  log "Prometheus: http://127.0.0.1:$prometheus_port"
+  log "OpenSearch Dashboards: http://127.0.0.1:$dashboards_port"
   ssh -N -i "$KEY_FILE" \
     -o ExitOnForwardFailure=yes \
     -o StrictHostKeyChecking=accept-new \
@@ -281,6 +291,9 @@ tunnel() {
     -L "127.0.0.1:$qdrant_port:127.0.0.1:6333" \
     -L "127.0.0.1:$neo4j_http_port:127.0.0.1:7474" \
     -L "127.0.0.1:$neo4j_bolt_port:127.0.0.1:7687" \
+    -L "127.0.0.1:$grafana_port:127.0.0.1:3000" \
+    -L "127.0.0.1:$prometheus_port:127.0.0.1:9090" \
+    -L "127.0.0.1:$dashboards_port:127.0.0.1:5601" \
     "$(connection_target)"
 }
 
@@ -312,7 +325,7 @@ Commands:
   stop     Deallocate the VM while preserving Docker volumes
   status   Show VM power state and public endpoint
   ssh      Open an interactive SSH shell
-  tunnel   Forward local web/API/search ports through SSH
+  tunnel   Forward local product, operations, and data-service ports through SSH
   destroy  Destroy the isolated remote-dev resource group (requires --yes)
 
 Overrides:

@@ -4,7 +4,7 @@
        infra-staging bootstrap-staging deploy-staging deploy-aws \
        deploy-azure infra-azure build-azure bootstrap-azure deploy-api-azure deploy-analytics-azure deploy-landing-azure destroy-azure \
        pause-azure resume-azure import-azure \
-       azure-dev-up azure-dev-sync azure-dev-start azure-dev-stop azure-dev-status azure-dev-ssh azure-dev-tunnel azure-dev-destroy \
+       azure-dev-up azure-dev-sync azure-dev-start azure-dev-stop azure-dev-status azure-dev-ssh azure-dev-tunnel azure-dev-destroy observability-up observability-down \
        verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
        setup lint format \
        dev-control-plane dev-data-plane dev-split test-control-plane test-data-plane test-all
@@ -21,6 +21,8 @@ help:
 	@echo "    make dev-analytics-api - Run the analytics API on port 8090"
 	@echo "    make dev-analytics-web - Run the analytics web product on port 5174"
 	@echo "    make dev-products  - Run both products as Docker deployables"
+	@echo "    make observability-up - Start Grafana, Prometheus, exporters, and admin UIs"
+	@echo "    make observability-down - Stop the local operations plane"
 	@echo "    make support-demo  - Validate Resolution Intelligence demo workflow"
 	@echo "    make demo-ready-local - Start local deps, seed demo data, and run demo acceptance"
 	@echo "    make ingest FILE=x - Ingest a file, directory, or --sample"
@@ -111,6 +113,12 @@ format:
 
 up:
 	docker compose up -d
+
+observability-up:
+	docker compose --profile observability up -d
+
+observability-down:
+	docker compose --profile observability down
 
 down:
 	docker compose down
