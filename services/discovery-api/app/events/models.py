@@ -3,16 +3,14 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from packages.platform_contracts.discovery import ImpressionToken
 from app.domain.models import ConsentState
-
+from packages.platform_contracts.discovery import ImpressionToken
 
 _ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
 _ID = Field(min_length=1, max_length=255, pattern=_ID_PATTERN)

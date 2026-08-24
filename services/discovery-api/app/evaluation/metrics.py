@@ -6,7 +6,6 @@ import math
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-
 METRIC_VERSIONS: Mapping[str, str] = {
     "recall_at_k": "v1",
     "mrr": "v1",

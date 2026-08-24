@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from packages.platform_contracts.discovery import DiscoveryComponentVersion, DiscoveryRequestContext, ImpressionToken
 from app.domain.models import ConsentState
 from app.events.models import (
     ClickPayload,
@@ -16,7 +15,7 @@ from app.events.models import (
     PlaytimePayload,
     QualifiedPlayPayload,
 )
-
+from packages.platform_contracts.discovery import DiscoveryComponentVersion, DiscoveryRequestContext, ImpressionToken
 
 UTC = timezone.utc
 ISSUED = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)

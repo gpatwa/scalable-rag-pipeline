@@ -8,8 +8,9 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-004 complete**. IMD-001 through IMD-004 are merged and
-validated. The next packetized wave is IMD-005, IMD-007, IMD-010, and IMD-020;
+Current checkpoint: **IMD-005, IMD-007, IMD-010, and IMD-020 complete**.
+IMD-001 through IMD-005, IMD-007, IMD-010, and IMD-020 are merged and
+validated. The next packetized wave is IMD-006, IMD-011, IMD-012, and IMD-021;
 later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
@@ -17,10 +18,10 @@ with the code that actually merged.
 
 Next dispatch wave:
 
-- [IMD-005](IMD-005-interaction-events.md) — interaction-event contracts
-- [IMD-007](IMD-007-evaluation-metrics.md) — evaluation metrics
-- [IMD-010](IMD-010-service-scaffold.md) — independent API scaffold
-- [IMD-020](IMD-020-search-strategy-adr.md) — search/vector strategy ADR
+- [IMD-006](IMD-006-test-fakes.md) — deterministic discovery test fakes
+- [IMD-011](IMD-011-local-configuration.md) — local configuration and flags
+- [IMD-012](IMD-012-repository-protocols.md) — provider-neutral repositories
+- [IMD-021](IMD-021-catalog-mapping.md) — versioned catalog mapping
 
 ## First Dispatch Wave
 

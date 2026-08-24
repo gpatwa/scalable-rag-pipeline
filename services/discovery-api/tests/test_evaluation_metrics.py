@@ -4,13 +4,13 @@ import math
 import pytest
 
 from app.evaluation.metrics import (
+    MetricResult,
     build_evaluation_report,
     calibration_error,
     catalog_coverage,
     evaluate_query,
     intra_list_diversity,
     mean_reciprocal_rank,
-    MetricResult,
     ndcg_at_k,
     negative_feedback_rate,
     policy_violation_rate,
