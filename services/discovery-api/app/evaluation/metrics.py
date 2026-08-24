@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
+from app.candidates.contracts import CandidateTrace, Degradation
+
 METRIC_VERSIONS: Mapping[str, str] = {
     "recall_at_k": "v1",
     "mrr": "v1",
@@ -16,6 +18,13 @@ METRIC_VERSIONS: Mapping[str, str] = {
     "calibration_error": "v1",
     "negative_feedback_rate": "v1",
     "policy_violation_rate": "v1",
+}
+
+SOURCE_METRIC_VERSIONS: Mapping[str, str] = {
+    "source_recall_at_k": "v1",
+    "source_catalog_coverage": "v1",
+    "source_overlap_rate": "v1",
+    "cold_start_quality": "v1",
 }
 
 
@@ -59,6 +68,167 @@ class EvaluationReport:
 
     def serialize(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+
+
+@dataclass(frozen=True)
+class SourceEvaluationCase:
+    """One query join between a candidate trace, judgments, and cohorts."""
+
+    query_id: str
+    trace: CandidateTrace
+    relevance: Mapping[str, int]
+    cohort_labels: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.query_id.strip():
+            raise ValueError("query_id must be non-empty")
+        labels = tuple(self.cohort_labels)
+        if len(labels) != len(set(labels)):
+            raise ValueError("cohort labels must be unique per query")
+        if any(not label.strip() for label in labels):
+            raise ValueError("cohort labels must be non-empty")
+        if any(not item_id.strip() for item_id in self.relevance):
+            raise ValueError("relevance IDs must be non-empty")
+        if any(isinstance(grade, bool) or not isinstance(grade, int) for grade in self.relevance.values()):
+            raise ValueError("relevance grades must be integers")
+
+
+@dataclass(frozen=True)
+class SourceMetricResult:
+    """A deterministic metric attributed to one source and cohort."""
+
+    metric_id: str
+    version: str
+    source: str
+    cohort: str
+    query_count: int
+    degraded_query_count: int
+    value: float
+
+
+@dataclass(frozen=True)
+class SourceEvaluationReport:
+    """Versioned source/cohort evaluation without provider-specific state."""
+
+    query_count: int
+    source_labels: tuple[str, ...]
+    cohort_labels: tuple[str, ...]
+    metrics: tuple[SourceMetricResult, ...]
+
+    @property
+    def metric_versions(self) -> dict[str, str]:
+        return {
+            f"{metric.source}:{metric.cohort}:{metric.metric_id}": metric.version
+            for metric in self.metrics
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "query_count": self.query_count,
+            "source_labels": list(self.source_labels),
+            "cohort_labels": list(self.cohort_labels),
+            "metric_versions": self.metric_versions,
+            "metrics": [
+                {
+                    "metric_id": metric.metric_id,
+                    "version": metric.version,
+                    "source": metric.source,
+                    "cohort": metric.cohort,
+                    "query_count": metric.query_count,
+                    "degraded_query_count": metric.degraded_query_count,
+                    "value": metric.value,
+                }
+                for metric in self.metrics
+            ],
+        }
+
+    def serialize(self) -> str:
+        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+
+
+def evaluate_source_metrics(
+    cases: Sequence[SourceEvaluationCase],
+    *,
+    k: int = 10,
+    minimum_grade: int = 1,
+) -> SourceEvaluationReport:
+    """Attribute retrieval quality to sources and explicit query cohorts.
+
+    Each query contributes once to each applicable cohort. Candidate IDs are
+    deduplicated per source before every numerator is calculated. A source's
+    overlap is its fraction of unique candidates also returned by another
+    healthy source for that query; degraded sources have explicit zero output.
+    """
+    _validate_k(k)
+    entries = tuple(cases)
+    query_ids = [case.query_id for case in entries]
+    if len(query_ids) != len(set(query_ids)):
+        raise ValueError("source evaluation query IDs must be unique")
+    source_names = sorted({result.source for case in entries for result in case.trace.source_results})
+    if not source_names:
+        return SourceEvaluationReport(0, (), (), ())
+    expected_sources = set(source_names)
+    all_cohorts = sorted({label for case in entries for label in case.cohort_labels} | {"all"})
+    buckets: dict[tuple[str, str], list[tuple[float, float, float, bool]]] = {}
+    for case in entries:
+        labels = ("all", *case.cohort_labels)
+        results = {result.source: result for result in case.trace.source_results}
+        if set(results) != expected_sources:
+            raise ValueError("source joins must contain the same source labels for every query")
+        healthy_ids = {
+            result.source: {candidate.experience_id for candidate in result.candidates}
+            for result in case.trace.source_results
+            if result.degradation in {Degradation.OK, Degradation.EMPTY}
+        }
+        for source in source_names:
+            result = results[source]
+            ids = [candidate.experience_id for candidate in result.candidates]
+            judged_ids = set(case.relevance)
+            degraded = result.degradation in {Degradation.FAILURE, Degradation.TIMEOUT}
+            recall = 0.0 if degraded else recall_at_k(ids, case.relevance, k=k, minimum_grade=minimum_grade)
+            coverage = 0.0 if degraded or not judged_ids else len(set(ids) & judged_ids) / len(judged_ids)
+            others = set().union(*(healthy_ids.get(name, set()) for name in source_names if name != source))
+            overlap = 0.0 if degraded or not ids else len(set(ids) & others) / len(set(ids))
+            for cohort in labels:
+                buckets.setdefault((source, cohort), []).append((recall, coverage, overlap, degraded))
+    metrics: list[SourceMetricResult] = []
+    for source in source_names:
+        for cohort in all_cohorts:
+            rows = buckets.get((source, cohort), [])
+            if not rows:
+                continue
+            count = len(rows)
+            degraded_count = sum(row[3] for row in rows)
+            values = {
+                "source_recall_at_k": sum(row[0] for row in rows) / count,
+                "source_catalog_coverage": sum(row[1] for row in rows) / count,
+                "source_overlap_rate": sum(row[2] for row in rows) / count,
+            }
+            if cohort != "all" and _is_cold_start_cohort(cohort):
+                values["cold_start_quality"] = values["source_recall_at_k"]
+            for metric_id in sorted(values):
+                metrics.append(
+                    SourceMetricResult(
+                        metric_id=metric_id,
+                        version=SOURCE_METRIC_VERSIONS[metric_id],
+                        source=source,
+                        cohort=cohort,
+                        query_count=count,
+                        degraded_query_count=degraded_count,
+                        value=values[metric_id],
+                    )
+                )
+    return SourceEvaluationReport(len(entries), tuple(source_names), tuple(all_cohorts), tuple(metrics))
+
+
+def build_source_evaluation_report(
+    cases: Sequence[SourceEvaluationCase],
+    *,
+    k: int = 10,
+    minimum_grade: int = 1,
+) -> SourceEvaluationReport:
+    """Named builder alias matching :func:`build_evaluation_report`."""
+    return evaluate_source_metrics(cases, k=k, minimum_grade=minimum_grade)
 
 
 def recall_at_k(
@@ -321,3 +491,8 @@ def _gain(grade: int) -> float:
 def _validate_k(k: int) -> None:
     if isinstance(k, bool) or k < 1:
         raise ValueError("k must be at least 1")
+
+
+def _is_cold_start_cohort(label: str) -> bool:
+    normalized = label.strip().lower().replace("_", "-")
+    return normalized in {"new-user", "new-item", "cold-start"}
