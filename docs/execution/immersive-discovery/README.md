@@ -9,12 +9,18 @@ packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
 Current checkpoint: **IMD-004 complete**. IMD-001 through IMD-004 are merged and
-validated. IMD-005 and later are backlog rows, not executable prompts, until the
+validated. The next packetized wave is IMD-005, IMD-007, IMD-010, and IMD-020;
+later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
 with the code that actually merged.
 
-Next packetization target: IMD-005, versioned interaction-event contracts.
+Next dispatch wave:
+
+- [IMD-005](IMD-005-interaction-events.md) — interaction-event contracts
+- [IMD-007](IMD-007-evaluation-metrics.md) — evaluation metrics
+- [IMD-010](IMD-010-service-scaffold.md) — independent API scaffold
+- [IMD-020](IMD-020-search-strategy-adr.md) — search/vector strategy ADR
 
 ## First Dispatch Wave
 
