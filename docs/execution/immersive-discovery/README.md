@@ -8,9 +8,9 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-017, IMD-024, IMD-027, IMD-028, and IMD-029 complete**.
-IMD-001 through IMD-007, IMD-010 through IMD-030 are merged and validated
-except IMD-018. The next packetized milestone is IMD-018;
+Current checkpoint: **IMD-018 complete**.
+IMD-001 through IMD-007, IMD-010 through IMD-030 are merged and validated.
+The next packetized wave is IMD-031 through IMD-036;
 later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
@@ -18,7 +18,12 @@ with the code that actually merged.
 
 Next dispatch wave:
 
-- [IMD-018](IMD-018-feature-materialization.md) — point-in-time feature materialization
+- [IMD-031](IMD-031-trending-candidates.md) — trending, quality, freshness candidates
+- [IMD-032](IMD-032-item-similarity.md) — item-to-item candidates
+- [IMD-033](IMD-033-coplay-graph.md) — co-play/co-engagement graph candidates
+- [IMD-034](IMD-034-two-tower.md) — two-tower retrieval baseline
+- [IMD-035](IMD-035-consented-social.md) — consent-aware social candidates
+- [IMD-036](IMD-036-cold-start.md) — user/item cold-start policy
 
 ## First Dispatch Wave
 
