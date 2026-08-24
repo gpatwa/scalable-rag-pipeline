@@ -180,6 +180,16 @@ docker compose --env-file .env.azure-dev --profile products up --build -d
 EOF
 }
 
+pick_tunnel_port() {
+  local port=$(( $1 + ${AZURE_DEV_TUNNEL_PORT_OFFSET:-0} ))
+  if command -v lsof >/dev/null 2>&1; then
+    while lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; do
+      port=$((port + 10000))
+    done
+  fi
+  printf '%s\n' "$port"
+}
+
 up() {
   ensure_tools
   ensure_azure_login
@@ -244,18 +254,33 @@ tunnel() {
   ensure_tools
   ensure_key
   terraform_init
-  log "forwarding web/API/search ports; press Ctrl-C to close"
+  local web_port analytics_web_port api_port analytics_api_port search_port
+  local qdrant_port neo4j_http_port neo4j_bolt_port
+  web_port="$(pick_tunnel_port 5173)"
+  analytics_web_port="$(pick_tunnel_port 5174)"
+  api_port="$(pick_tunnel_port 8080)"
+  analytics_api_port="$(pick_tunnel_port 8090)"
+  search_port="$(pick_tunnel_port 9200)"
+  qdrant_port="$(pick_tunnel_port 6333)"
+  neo4j_http_port="$(pick_tunnel_port 7474)"
+  neo4j_bolt_port="$(pick_tunnel_port 7687)"
+  log "forwarding Azure services; press Ctrl-C to close"
+  log "support web: http://127.0.0.1:$web_port"
+  log "analytics web: http://127.0.0.1:$analytics_web_port"
+  log "support API: http://127.0.0.1:$api_port"
+  log "analytics API: http://127.0.0.1:$analytics_api_port"
   ssh -N -i "$KEY_FILE" \
+    -o ExitOnForwardFailure=yes \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
-    -L 5173:127.0.0.1:5173 \
-    -L 5174:127.0.0.1:5174 \
-    -L 8080:127.0.0.1:8080 \
-    -L 8090:127.0.0.1:8090 \
-    -L 9200:127.0.0.1:9200 \
-    -L 6333:127.0.0.1:6333 \
-    -L 7474:127.0.0.1:7474 \
-    -L 7687:127.0.0.1:7687 \
+    -L "127.0.0.1:$web_port:127.0.0.1:5173" \
+    -L "127.0.0.1:$analytics_web_port:127.0.0.1:5174" \
+    -L "127.0.0.1:$api_port:127.0.0.1:8080" \
+    -L "127.0.0.1:$analytics_api_port:127.0.0.1:8090" \
+    -L "127.0.0.1:$search_port:127.0.0.1:9200" \
+    -L "127.0.0.1:$qdrant_port:127.0.0.1:6333" \
+    -L "127.0.0.1:$neo4j_http_port:127.0.0.1:7474" \
+    -L "127.0.0.1:$neo4j_bolt_port:127.0.0.1:7687" \
     "$(connection_target)"
 }
 
@@ -293,7 +318,8 @@ Commands:
 Overrides:
   AZURE_DEV_SUBSCRIPTION_ID, AZURE_DEV_LOCATION, AZURE_DEV_NAME,
   AZURE_DEV_VM_SIZE, AZURE_DEV_SSH_SOURCE_CIDR,
-  AZURE_DEV_AUTO_SHUTDOWN_TIME_UTC, AZURE_DEV_STATE_DIR
+  AZURE_DEV_AUTO_SHUTDOWN_TIME_UTC, AZURE_DEV_STATE_DIR,
+  AZURE_DEV_TUNNEL_PORT_OFFSET
 EOF
 }
 

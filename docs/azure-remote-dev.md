@@ -72,6 +72,9 @@ make azure-dev-up
 
 The optional `AZURE_DEV_SSH_SOURCE_CIDR` is useful when the detected public IP
 is not the address that reaches Azure, such as when using a corporate VPN.
+The tunnel command automatically moves a local port up by 10,000 when the
+standard port is already occupied. Use `AZURE_DEV_TUNNEL_PORT_OFFSET` to apply
+a predictable offset to every tunnel.
 
 ## Security and operational boundaries
 
