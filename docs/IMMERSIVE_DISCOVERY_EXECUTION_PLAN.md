@@ -1,7 +1,7 @@
 # Immersive Discovery Vertical Execution Plan
 
-Status: IMD-001 through IMD-005, IMD-007, IMD-010, and IMD-020 complete; local
-implementation and production readiness remain pending
+Status: IMD-001 through IMD-007, IMD-010 through IMD-012, and IMD-020 through
+IMD-021 complete; local implementation and production readiness remain pending
 
 Audience: Engineering leads, reviewers, and delegated Luna coding sessions
 

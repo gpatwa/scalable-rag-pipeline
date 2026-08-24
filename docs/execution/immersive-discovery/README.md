@@ -8,9 +8,10 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-005, IMD-007, IMD-010, and IMD-020 complete**.
-IMD-001 through IMD-005, IMD-007, IMD-010, and IMD-020 are merged and
-validated. The next packetized wave is IMD-006, IMD-011, IMD-012, and IMD-021;
+Current checkpoint: **IMD-006, IMD-011, IMD-012, and IMD-021 complete**.
+IMD-001 through IMD-007, IMD-010 through IMD-012, and IMD-020 through IMD-021
+are merged and validated. The next packetized wave is IMD-013, IMD-014,
+IMD-016, IMD-022, and IMD-030;
 later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
@@ -18,10 +19,11 @@ with the code that actually merged.
 
 Next dispatch wave:
 
-- [IMD-006](IMD-006-test-fakes.md) — deterministic discovery test fakes
-- [IMD-011](IMD-011-local-configuration.md) — local configuration and flags
-- [IMD-012](IMD-012-repository-protocols.md) — provider-neutral repositories
-- [IMD-021](IMD-021-catalog-mapping.md) — versioned catalog mapping
+- [IMD-013](IMD-013-persistence-models.md) — local persistence models and migration
+- [IMD-014](IMD-014-catalog-generator.md) — deterministic fictional catalog generator
+- [IMD-016](IMD-016-provenance-adapter.md) — provenance-gated catalog adapter
+- [IMD-022](IMD-022-document-mapper.md) — provider-neutral catalog document mapper
+- [IMD-030](IMD-030-candidate-contracts.md) — candidate-source contracts
 
 ## First Dispatch Wave
 
