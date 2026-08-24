@@ -8,9 +8,9 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-050 and IMD-060 complete**.
-IMD-001 through IMD-050 and IMD-059 through IMD-060 are merged and validated.
-The next packetized wave is IMD-051 and IMD-053;
+Current checkpoint: **IMD-051 and IMD-053 complete**.
+IMD-001 through IMD-051, IMD-053, and IMD-059 through IMD-060 are merged and
+validated. The next packetized wave is IMD-052, IMD-054, and IMD-056;
 later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
@@ -18,8 +18,9 @@ with the code that actually merged.
 
 Next dispatch wave:
 
-- [IMD-051](IMD-051-profile-builder.md) — short/long-term profile builder
-- [IMD-053](IMD-053-experiment-assignment.md) — deterministic experiments
+- [IMD-052](IMD-052-exploration-policy.md) — bounded exploration policy
+- [IMD-054](IMD-054-telemetry.md) — redacted discovery telemetry
+- [IMD-056](IMD-056-privacy-workflow.md) — consent/deletion workflow
 
 ## First Dispatch Wave
 
