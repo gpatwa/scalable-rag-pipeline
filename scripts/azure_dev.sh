@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT_DIR/infra/terraform/azure-dev"
 STATE_DIR="${AZURE_DEV_STATE_DIR:-$ROOT_DIR/.local/azure-dev}"
 STATE_FILE="$STATE_DIR/terraform.tfstate"
-KEY_FILE="$STATE_DIR/id_ed25519"
+KEY_FILE="$STATE_DIR/id_rsa"
 KNOWN_HOSTS_FILE="$STATE_DIR/known_hosts"
 
 NAME="${AZURE_DEV_NAME:-compass-dev}"
@@ -58,8 +58,8 @@ ensure_key() {
   mkdir -p "$STATE_DIR"
   chmod 700 "$STATE_DIR"
   if [[ ! -f "$KEY_FILE" ]]; then
-    log "generating isolated SSH key at $KEY_FILE"
-    ssh-keygen -q -t ed25519 -N "" -f "$KEY_FILE" -C "compass-azure-dev"
+    log "generating isolated RSA SSH key at $KEY_FILE"
+    ssh-keygen -q -t rsa -b 4096 -N "" -f "$KEY_FILE" -C "compass-azure-dev"
   fi
   chmod 600 "$KEY_FILE"
 }

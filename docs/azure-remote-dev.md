@@ -78,8 +78,8 @@ is not the address that reaches Azure, such as when using a corporate VPN.
 - Only TCP/22 from the detected source CIDR is exposed publicly.
 - App, database, cache, vector, graph, and OpenSearch ports are reachable only
   through SSH tunnels.
-- Password SSH login is disabled; the generated Ed25519 key is the only login
-  credential.
+- Password SSH login is disabled; the generated RSA 4096 key is the only login
+  credential. Azure's current VM provider path requires RSA keys here.
 - The remote `.env.azure-dev` contains local demo defaults and is generated on
   the VM. The local `.env` and other secret files are excluded from rsync.
 - The default auto-shutdown schedule reduces idle compute charges. `stop`
