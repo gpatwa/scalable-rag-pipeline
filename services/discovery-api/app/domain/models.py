@@ -1,7 +1,7 @@
 """Immutable domain contracts for immersive discovery."""
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,36 +13,36 @@ class _DomainModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class AgeRating(StrEnum):
+class AgeRating(str, Enum):
     E = "E"
     E10 = "E10"
     T = "T"
 
 
-class SafetyState(StrEnum):
+class SafetyState(str, Enum):
     APPROVED = "approved"
     RESTRICTED = "restricted"
 
 
-class Availability(StrEnum):
+class Availability(str, Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
 
 
-class CatalogDevice(StrEnum):
+class CatalogDevice(str, Enum):
     DESKTOP = "desktop"
     MOBILE = "mobile"
     TABLET = "tablet"
 
 
-class Locale(StrEnum):
+class Locale(str, Enum):
     EN_US = "en-US"
     ES_ES = "es-ES"
     FR_FR = "fr-FR"
     DE_DE = "de-DE"
 
 
-class Genre(StrEnum):
+class Genre(str, Enum):
     ACTION = "action"
     ADVENTURE = "adventure"
     ARCADE = "arcade"
@@ -57,7 +57,7 @@ class Genre(StrEnum):
     STRATEGY = "strategy"
 
 
-class Theme(StrEnum):
+class Theme(str, Enum):
     ART = "art"
     CANYON = "canyon"
     CAVE = "cave"
@@ -90,7 +90,7 @@ class Theme(StrEnum):
     WHIMSICAL = "whimsical"
 
 
-class Mechanic(StrEnum):
+class Mechanic(str, Enum):
     BUILDING = "building"
     COLLECTING = "collecting"
     COOPERATIVE_PUZZLE = "cooperative-puzzle"
@@ -107,29 +107,29 @@ class Mechanic(StrEnum):
     TRADING = "trading"
 
 
-class FreshnessBand(StrEnum):
+class FreshnessBand(str, Enum):
     FRESH = "fresh"
     STEADY = "steady"
     STALE = "stale"
 
 
-class QualityBand(StrEnum):
+class QualityBand(str, Enum):
     HIGH = "high"
     MEDIUM = "medium"
 
 
-class PopularityBand(StrEnum):
+class PopularityBand(str, Enum):
     NICHE = "niche"
     RISING = "rising"
     POPULAR = "popular"
 
 
-class ConsentState(StrEnum):
+class ConsentState(str, Enum):
     PERSONALIZATION_ALLOWED = "personalization_allowed"
     PERSONALIZATION_DENIED = "personalization_denied"
 
 
-class Persona(StrEnum):
+class Persona(str, Enum):
     EXPLICIT_PREFERENCE = "explicit-preference"
     SHORT_HISTORY = "short-history"
     LONG_HISTORY = "long-history"
@@ -148,7 +148,7 @@ class Persona(StrEnum):
     GUEST = "guest"
 
 
-class HistoryLength(StrEnum):
+class HistoryLength(str, Enum):
     NONE = "none"
     SHORT = "short"
     MEDIUM = "medium"
@@ -248,7 +248,7 @@ class ImmersiveDiscoveryContext(_DomainModel):
     filters: ExperienceFilters = Field(default_factory=ExperienceFilters)
 
 
-class EligibilityReasonCode(StrEnum):
+class EligibilityReasonCode(str, Enum):
     ALLOW = "allow"
     SAFE_CATALOG_FALLBACK = "safe_catalog_fallback"
     PERSONALIZATION_CONSENT_DENIED = "personalization_consent_denied"
@@ -305,17 +305,24 @@ def evaluate_eligibility(
         )
 
     request = context.request_context
-    effective = constraints or EligibilityConstraints(
-        tenant_id=request.tenant_id,
-        locale=Locale(request.locale),
-        device=(
-            CatalogDevice.DESKTOP
-            if request.device in {"web", "api"}
-            else CatalogDevice(request.device)
-        ),
-        age_rating_limit=user.age_rating_limit,
-        personalization_requested=context.surface in {"home", "recommendation", "related"},
-    )
+    if constraints is None:
+        try:
+            locale = Locale(request.locale)
+        except ValueError:
+            return _deny(EligibilityReasonCode.LOCALE_NOT_SUPPORTED)
+        try:
+            device = CatalogDevice.DESKTOP if request.device in {"web", "api"} else CatalogDevice(request.device)
+        except ValueError:
+            return _deny(EligibilityReasonCode.DEVICE_NOT_SUPPORTED)
+        effective = EligibilityConstraints(
+            tenant_id=request.tenant_id,
+            locale=locale,
+            device=device,
+            age_rating_limit=user.age_rating_limit,
+            personalization_requested=context.surface in {"home", "recommendation", "related"},
+        )
+    else:
+        effective = constraints
     if user.tenant_id != request.tenant_id or experience.tenant_id != effective.tenant_id:
         return _deny(EligibilityReasonCode.TENANT_SCOPE_MISMATCH)
     if _AGE_ORDER[experience.age_rating] > _AGE_ORDER[effective.age_rating_limit]:

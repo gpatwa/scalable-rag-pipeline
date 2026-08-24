@@ -7,19 +7,16 @@ from pydantic import ValidationError
 from app.domain.models import (
     AgeRating,
     CatalogDevice,
-    ConsentState,
     EligibilityConstraints,
     EligibilityReasonCode,
     ExperienceRecord,
     ExperienceSignals,
-    HistoryLength,
     ImmersiveDiscoveryContext,
     Locale,
     UserProfile,
     evaluate_eligibility,
 )
 from packages.platform_contracts.discovery import DiscoveryRequestContext
-
 
 FIXTURES = Path(__file__).parent / "fixtures" / "golden"
 
@@ -121,6 +118,22 @@ def test_tenant_mismatch_and_missing_context_fail_closed():
     )
     assert evaluate_eligibility(experience, user, context, mismatched).reason_code is EligibilityReasonCode.TENANT_SCOPE_MISMATCH
     assert evaluate_eligibility(None, user, context).reason_code is EligibilityReasonCode.MISSING_CONTEXT
+
+
+def test_invalid_request_locale_and_device_fail_closed():
+    user, experience, context = _pair()
+    invalid_locale = context.model_copy(
+        update={
+            "request_context": context.request_context.model_copy(update={"locale": "xx-XX"}),
+        }
+    )
+    invalid_device = context.model_copy(
+        update={
+            "request_context": context.request_context.model_copy(update={"device": "tv"}),
+        }
+    )
+    assert evaluate_eligibility(experience, user, invalid_locale).reason_code is EligibilityReasonCode.LOCALE_NOT_SUPPORTED
+    assert evaluate_eligibility(experience, user, invalid_device).reason_code is EligibilityReasonCode.DEVICE_NOT_SUPPORTED
 
 
 def test_consent_denied_allows_safe_non_personalized_result():
