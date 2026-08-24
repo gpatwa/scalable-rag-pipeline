@@ -14,8 +14,8 @@ integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
 with the code that actually merged.
 
-Next packetization target: IMD-004, immersive catalog, user, context, and
-eligibility contracts.
+Next packet: [IMD-004](IMD-004-domain-contracts.md), immersive catalog, user,
+context, and eligibility contracts.
 
 ## First Dispatch Wave
 
