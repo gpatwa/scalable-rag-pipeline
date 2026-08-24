@@ -8,10 +8,10 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-013, IMD-014, IMD-016, IMD-022, and IMD-030 complete**.
-IMD-001 through IMD-007, IMD-010 through IMD-016, and IMD-020 through IMD-022
-are merged and validated. The next packetized wave is IMD-015, IMD-023,
-IMD-025, and IMD-026;
+Current checkpoint: **IMD-015, IMD-023, IMD-025, and IMD-026 complete**.
+IMD-001 through IMD-007, IMD-010 through IMD-016, IMD-020 through IMD-026,
+and IMD-030 are merged and validated. The next packetized wave is IMD-017,
+IMD-024, IMD-027, IMD-028, and IMD-029;
 later tasks are backlog rows, not executable prompts, until the
 integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
@@ -19,10 +19,11 @@ with the code that actually merged.
 
 Next dispatch wave:
 
-- [IMD-015](IMD-015-behavior-simulator.md) — exposure-aware behavior simulator
-- [IMD-023](IMD-023-indexing-worker.md) — bounded outbox indexing worker
-- [IMD-025](IMD-025-lexical-retrieval.md) — exact and BM25 retrieval
-- [IMD-026](IMD-026-vector-retrieval.md) — filtered vector retrieval
+- [IMD-017](IMD-017-event-lake.md) — append-only local event lake
+- [IMD-024](IMD-024-index-maintenance.md) — tombstone/rebuild/alias maintenance
+- [IMD-027](IMD-027-hybrid-fusion.md) — deterministic hybrid fusion
+- [IMD-028](IMD-028-query-parser.md) — deterministic query parsing
+- [IMD-029](IMD-029-eligibility-filter.md) — fail-closed eligibility compiler
 
 ## First Dispatch Wave
 
