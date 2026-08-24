@@ -1,6 +1,6 @@
 # Immersive Discovery Vertical Execution Plan
 
-Status: IMD-001 through IMD-074 complete; IMD-075 through IMD-088 remain
+Status: IMD-001 through IMD-075 complete; IMD-076 through IMD-088 remain
 optional intelligence, operations, and production-readiness follow-up work.
 
 Audience: Engineering leads, reviewers, and delegated Luna coding sessions
