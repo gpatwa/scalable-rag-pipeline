@@ -1,52 +1,65 @@
-"""Pure, backend-neutral evaluation metrics for immersive discovery."""
+"""Pure, backend-neutral metrics for immersive discovery evaluation."""
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Mapping, Sequence
 
 
-METRIC_VERSION = "v1"
+METRIC_VERSIONS: Mapping[str, str] = {
+    "recall_at_k": "v1",
+    "mrr": "v1",
+    "ndcg_at_k": "v1",
+    "catalog_coverage": "v1",
+    "unique_creator_coverage": "v1",
+    "intra_list_diversity": "v1",
+    "calibration_error": "v1",
+    "negative_feedback_rate": "v1",
+    "policy_violation_rate": "v1",
+}
 
 
 @dataclass(frozen=True)
-class MetricValue:
+class QueryMetrics:
+    query_id: str
+    recall_at_k: float
+    mrr: float
+    ndcg_at_k: float
+    retrieved_count: int
+    relevant_count: int
+
+
+@dataclass(frozen=True)
+class MetricResult:
     metric_id: str
     version: str
     value: float
-
-    def __post_init__(self) -> None:
-        if not self.metric_id.strip():
-            raise ValueError("metric_id must not be blank")
-        if not self.version.strip():
-            raise ValueError("metric version must not be blank")
-        _finite(self.value, "metric value")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"metric_id": self.metric_id, "version": self.version, "value": self.value}
 
 
 @dataclass(frozen=True)
 class EvaluationReport:
     query_count: int
     cohort_labels: tuple[str, ...]
-    metrics: tuple[MetricValue, ...]
+    metrics: tuple[MetricResult, ...]
 
-    def __post_init__(self) -> None:
-        if self.query_count < 0:
-            raise ValueError("query_count must not be negative")
-        if len(set(self.cohort_labels)) != len(self.cohort_labels):
-            raise ValueError("cohort labels must be unique")
-        ids = [metric.metric_id for metric in self.metrics]
-        if len(set(ids)) != len(ids):
-            raise ValueError("metric IDs must be unique")
+    @property
+    def metric_versions(self) -> dict[str, str]:
+        return {metric.metric_id: metric.version for metric in self.metrics}
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "query_count": self.query_count,
             "cohort_labels": list(self.cohort_labels),
-            "metrics": [metric.to_dict() for metric in self.metrics],
+            "metric_versions": self.metric_versions,
+            "metrics": {
+                metric.metric_id: metric.value
+                for metric in self.metrics
+            },
         }
+
+    def serialize(self) -> str:
+        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
 
 
 def recall_at_k(
@@ -56,10 +69,9 @@ def recall_at_k(
     k: int = 10,
     minimum_grade: int = 1,
 ) -> float:
-    """Fraction of judged relevant IDs found in the stable unique top-k."""
+    """Return relevant catalog items found in the stable unique top-k."""
     _validate_k(k)
-    _validate_grade(minimum_grade)
-    relevant = {item_id for item_id, grade in relevance.items() if _grade(grade) >= minimum_grade}
+    relevant = {item_id for item_id, grade in relevance.items() if grade >= minimum_grade}
     if not relevant:
         return 0.0
     return len(set(_unique_prefix(retrieved_ids, k)) & relevant) / len(relevant)
@@ -72,220 +84,241 @@ def mean_reciprocal_rank(
     k: int = 10,
     minimum_grade: int = 1,
 ) -> float:
-    """Reciprocal rank of the first relevant unique result, or zero."""
+    """Return the reciprocal rank of the first relevant unique result."""
     _validate_k(k)
-    _validate_grade(minimum_grade)
-    relevant = {item_id for item_id, grade in relevance.items() if _grade(grade) >= minimum_grade}
+    relevant = {item_id for item_id, grade in relevance.items() if grade >= minimum_grade}
     for rank, item_id in enumerate(_unique_prefix(retrieved_ids, k), start=1):
         if item_id in relevant:
             return 1.0 / rank
     return 0.0
 
 
-def mrr_at_k(
-    retrieved_ids: Sequence[str], relevance: Mapping[str, int], *, k: int = 10, minimum_grade: int = 1
+def mrr(*args: object, **kwargs: object) -> float:
+    """Short alias for :func:`mean_reciprocal_rank`."""
+    return mean_reciprocal_rank(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def ndcg_at_k(
+    retrieved_ids: Sequence[str],
+    relevance: Mapping[str, int],
+    *,
+    k: int = 10,
 ) -> float:
-    """Alias with an explicit top-k name for report callers."""
-    return mean_reciprocal_rank(retrieved_ids, relevance, k=k, minimum_grade=minimum_grade)
-
-
-def ndcg_at_k(retrieved_ids: Sequence[str], relevance: Mapping[str, int], *, k: int = 10) -> float:
-    """Graded normalized discounted cumulative gain over unique top-k IDs."""
+    """Return graded nDCG using gains of ``2**grade - 1``."""
     _validate_k(k)
-    grades = {item_id: _grade(grade) for item_id, grade in relevance.items()}
     retrieved = _unique_prefix(retrieved_ids, k)
-    actual = _discounted_gain((grades.get(item_id, 0) for item_id in retrieved))
-    ideal = _discounted_gain(sorted(grades.values(), reverse=True)[:k])
+    actual = sum(
+        _gain(relevance.get(item_id, 0)) / math.log2(rank + 1)
+        for rank, item_id in enumerate(retrieved, start=1)
+    )
+    ideal_grades = sorted(relevance.values(), reverse=True)[:k]
+    ideal = sum(
+        _gain(grade) / math.log2(rank + 1)
+        for rank, grade in enumerate(ideal_grades, start=1)
+    )
     return 0.0 if ideal == 0.0 else actual / ideal
 
 
-def catalog_coverage(retrieved_by_query: Mapping[str, Sequence[str]], catalog_ids: Sequence[str]) -> float:
-    """Unique catalog items retrieved divided by the non-empty catalog size."""
+def evaluate_query(
+    query_id: str,
+    retrieved_ids: Sequence[str],
+    relevance: Mapping[str, int],
+    *,
+    k: int = 10,
+    minimum_grade: int = 1,
+) -> QueryMetrics:
+    _validate_k(k)
+    unique_retrieved = _unique_prefix(retrieved_ids, k)
+    return QueryMetrics(
+        query_id=query_id,
+        recall_at_k=recall_at_k(retrieved_ids, relevance, k=k, minimum_grade=minimum_grade),
+        mrr=mean_reciprocal_rank(retrieved_ids, relevance, k=k, minimum_grade=minimum_grade),
+        ndcg_at_k=ndcg_at_k(retrieved_ids, relevance, k=k),
+        retrieved_count=len(unique_retrieved),
+        relevant_count=sum(grade >= minimum_grade for grade in relevance.values()),
+    )
+
+
+def catalog_coverage(retrieved_ids: Sequence[str], catalog_ids: Sequence[str]) -> float:
+    """Return unique retrieved items divided by the unique catalog size."""
     catalog = set(catalog_ids)
     if not catalog:
-        raise ValueError("catalog denominator is undefined for an empty catalog")
-    retrieved = {item_id for ids in retrieved_by_query.values() for item_id in _unique(ids) if item_id in catalog}
-    return len(retrieved) / len(catalog)
+        return 0.0
+    return len(set(retrieved_ids) & catalog) / len(catalog)
 
 
 def unique_creator_coverage(
-    retrieved_by_query: Mapping[str, Sequence[str]],
-    catalog_by_id: Mapping[str, Any],
+    retrieved_ids: Sequence[str],
+    catalog_ids: Sequence[str],
+    creator_by_item: Mapping[str, str],
 ) -> float:
-    """Unique creators represented in results divided by catalog creator count."""
-    catalog_creators = {_field(item, "creator_id") for item in catalog_by_id.values()}
-    if not catalog_creators or any(not creator for creator in catalog_creators):
-        raise ValueError("creator denominator is undefined for an empty or invalid catalog")
+    """Return unique retrieved creators divided by creators in the catalog."""
+    catalog = set(catalog_ids)
+    if any(item_id not in creator_by_item for item_id in catalog):
+        raise ValueError("creator denominator is incomplete")
+    creators = {creator_by_item[item_id] for item_id in catalog}
+    if not creators:
+        return 0.0
     retrieved_creators = {
-        _field(catalog_by_id[item_id], "creator_id")
-        for ids in retrieved_by_query.values()
-        for item_id in _unique(ids)
-        if item_id in catalog_by_id
+        creator_by_item[item_id]
+        for item_id in set(retrieved_ids) & catalog
     }
-    return len(retrieved_creators & catalog_creators) / len(catalog_creators)
+    return len(retrieved_creators) / len(creators)
 
 
 def intra_list_diversity(
-    items: Sequence[Any],
+    item_ids: Sequence[str],
+    genres_by_item: Mapping[str, Sequence[str]],
+    themes_by_item: Mapping[str, Sequence[str]],
     *,
-    embeddings: Mapping[str, Sequence[float]] | None = None,
+    embeddings_by_item: Mapping[str, Sequence[float]] | None = None,
 ) -> float:
-    """Mean pairwise distance, using cosine distance or categorical fallback.
+    """Return mean pairwise distance, with metadata then vector fallback.
 
-    Empty and one-item lists are defined as zero. A zero vector (or a pair of
-    zero vectors) uses the deterministic genre/theme Jaccard fallback.
+    Metadata distance is Jaccard distance over genres and themes. If both
+    metadata sets are empty for a pair, cosine distance is used when both
+    vectors exist. Missing or zero vectors contribute deterministic distance
+    zero rather than producing NaN.
     """
+    items = _unique_all(item_ids)
     if len(items) < 2:
         return 0.0
-    distances = []
-    for left_index, left in enumerate(items):
-        for right in items[left_index + 1 :]:
-            left_id, right_id = _field(left, "experience_id"), _field(right, "experience_id")
-            left_vector = embeddings.get(left_id) if embeddings else None
-            right_vector = embeddings.get(right_id) if embeddings else None
-            if left_vector is not None and right_vector is not None and _has_nonzero_norm(left_vector) and _has_nonzero_norm(right_vector):
-                distances.append(1.0 - _cosine(left_vector, right_vector))
-            else:
-                distances.append(_categorical_distance(left, right))
+    distances = [
+        _item_distance(first, second, genres_by_item, themes_by_item, embeddings_by_item)
+        for index, first in enumerate(items)
+        for second in items[index + 1 :]
+    ]
     return sum(distances) / len(distances)
 
 
-def calibration_error(predicted_probabilities: Sequence[float], observed_outcomes: Sequence[int | bool], *, bins: int = 10) -> float:
-    """Expected calibration error using equal-width probability bins."""
-    if bins < 1:
-        raise ValueError("bins must be at least 1")
+def calibration_error(
+    predicted_probabilities: Sequence[float],
+    observed_outcomes: Sequence[int | bool],
+    *,
+    bin_count: int = 10,
+) -> float:
+    """Return equal-width expected calibration error."""
+    if bin_count < 1:
+        raise ValueError("bin_count must be at least 1")
     if len(predicted_probabilities) != len(observed_outcomes):
-        raise ValueError("predicted probabilities and outcomes must have equal lengths")
+        raise ValueError("probabilities and outcomes must have equal lengths")
     if not predicted_probabilities:
         return 0.0
-    pairs = [(_probability(probability), _binary(outcome)) for probability, outcome in zip(predicted_probabilities, observed_outcomes)]
+    for probability in predicted_probabilities:
+        if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+            raise ValueError("probabilities must be finite values in [0, 1]")
+    if any(outcome not in (0, 1, False, True) for outcome in observed_outcomes):
+        raise ValueError("outcomes must be binary")
+    total = len(predicted_probabilities)
     error = 0.0
-    for bin_index in range(bins):
-        members = [pair for pair in pairs if min(int(pair[0] * bins), bins - 1) == bin_index]
-        if members:
-            error += len(members) / len(pairs) * abs(sum(pair[0] for pair in members) / len(members) - sum(pair[1] for pair in members) / len(members))
+    bins: list[list[int]] = [[] for _ in range(bin_count)]
+    for index, probability in enumerate(predicted_probabilities):
+        bin_index = min(int(probability * bin_count), bin_count - 1)
+        bins[bin_index].append(index)
+    for indices in bins:
+        if indices:
+            mean_probability = sum(predicted_probabilities[index] for index in indices) / len(indices)
+            mean_outcome = sum(int(observed_outcomes[index]) for index in indices) / len(indices)
+            error += len(indices) / total * abs(mean_probability - mean_outcome)
     return error
 
 
-def negative_feedback_rate(outcomes: Sequence[int | bool]) -> float:
-    """Fraction of observed binary outcomes marked as negative feedback."""
-    if not outcomes:
+def negative_feedback_rate(negative_feedback: Sequence[bool]) -> float:
+    """Return negative actions divided by observed feedback opportunities."""
+    if not negative_feedback:
         return 0.0
-    values = [_binary(outcome) for outcome in outcomes]
-    return sum(values) / len(values)
+    return sum(negative_feedback) / len(negative_feedback)
 
 
-def policy_violation_rate(violations: Sequence[int | bool]) -> float:
-    """Fraction of evaluated candidates or decisions that violated policy."""
+def policy_violation_rate(violations: Sequence[bool]) -> float:
+    """Return policy violations divided by evaluated candidates."""
     if not violations:
         return 0.0
-    values = [_binary(violation) for violation in violations]
-    return sum(values) / len(values)
+    return sum(violations) / len(violations)
 
 
-def aggregate_report(
-    retrieved_by_query: Mapping[str, Sequence[str]],
-    relevance_by_query: Mapping[str, Mapping[str, int]],
+def build_evaluation_report(
+    query_metrics: Sequence[QueryMetrics],
+    metric_values: Mapping[str, float] | Sequence[MetricResult],
     *,
-    catalog_ids: Sequence[str] | None = None,
-    catalog_by_id: Mapping[str, Any] | None = None,
-    predicted_probabilities: Sequence[float] = (),
-    observed_outcomes: Sequence[int | bool] = (),
-    negative_feedback: Sequence[int | bool] = (),
-    policy_violations: Sequence[int | bool] = (),
     cohort_labels: Sequence[str] = (),
-    k: int = 10,
+    metric_versions: Mapping[str, str] | None = None,
 ) -> EvaluationReport:
-    """Create a stable, versioned report from independent metric inputs."""
-    _validate_k(k)
-    query_ids = sorted(relevance_by_query)
-    metrics = [
-        MetricValue("recall_at_k", METRIC_VERSION, _mean(recall_at_k(retrieved_by_query.get(query_id, ()), relevance_by_query[query_id], k=k) for query_id in query_ids)),
-        MetricValue("mrr_at_k", METRIC_VERSION, _mean(mrr_at_k(retrieved_by_query.get(query_id, ()), relevance_by_query[query_id], k=k) for query_id in query_ids)),
-        MetricValue("ndcg_at_k", METRIC_VERSION, _mean(ndcg_at_k(retrieved_by_query.get(query_id, ()), relevance_by_query[query_id], k=k) for query_id in query_ids)),
-        MetricValue("calibration_error", METRIC_VERSION, calibration_error(predicted_probabilities, observed_outcomes)),
-        MetricValue("negative_feedback_rate", METRIC_VERSION, negative_feedback_rate(negative_feedback)),
-        MetricValue("policy_violation_rate", METRIC_VERSION, policy_violation_rate(policy_violations)),
-    ]
-    if catalog_ids is not None:
-        metrics.append(MetricValue("catalog_coverage", METRIC_VERSION, catalog_coverage(retrieved_by_query, catalog_ids)))
-    if catalog_by_id is not None:
-        metrics.append(MetricValue("unique_creator_coverage", METRIC_VERSION, unique_creator_coverage(retrieved_by_query, catalog_by_id)))
-    return EvaluationReport(len(query_ids), tuple(cohort_labels), tuple(metrics))
+    """Build a stable report and reject duplicate or ambiguous metric IDs."""
+    labels = tuple(sorted(set(cohort_labels)))
+    if len(labels) != len(tuple(cohort_labels)):
+        raise ValueError("cohort labels must be unique")
+    versions = dict(metric_versions or {})
+    if isinstance(metric_values, Mapping):
+        values = dict(metric_values)
+    else:
+        values = {}
+        for metric in metric_values:
+            if metric.metric_id in values:
+                raise ValueError("metric IDs must be unique")
+            values[metric.metric_id] = metric.value
+            if metric.metric_id in versions and versions[metric.metric_id] != metric.version:
+                raise ValueError("metric versions conflict")
+            versions[metric.metric_id] = metric.version
+    unknown_versions = set(versions) - set(values)
+    if unknown_versions:
+        raise ValueError("metric versions contain unknown metric IDs")
+    results: list[MetricResult] = []
+    for metric_id in sorted(values):
+        if not metric_id:
+            raise ValueError("metric IDs must be non-empty")
+        value = values[metric_id]
+        if not math.isfinite(value):
+            raise ValueError(f"metric {metric_id} must be finite")
+        version = versions.get(metric_id, METRIC_VERSIONS.get(metric_id, "v1"))
+        if not version:
+            raise ValueError(f"metric {metric_id} must have a version")
+        results.append(MetricResult(metric_id, version, value))
+    return EvaluationReport(len(query_metrics), labels, tuple(results))
 
 
-def _unique(values: Sequence[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+def _item_distance(
+    first: str,
+    second: str,
+    genres_by_item: Mapping[str, Sequence[str]],
+    themes_by_item: Mapping[str, Sequence[str]],
+    embeddings_by_item: Mapping[str, Sequence[float]] | None,
+) -> float:
+    first_tags = set(genres_by_item.get(first, ())) | set(themes_by_item.get(first, ()))
+    second_tags = set(genres_by_item.get(second, ())) | set(themes_by_item.get(second, ()))
+    union = first_tags | second_tags
+    if union:
+        return 1.0 - len(first_tags & second_tags) / len(union)
+    if embeddings_by_item is None:
+        return 0.0
+    return _cosine_distance(embeddings_by_item.get(first), embeddings_by_item.get(second))
+
+
+def _cosine_distance(first: Sequence[float] | None, second: Sequence[float] | None) -> float:
+    if first is None or second is None or len(first) != len(second) or not first:
+        return 0.0
+    if any(not math.isfinite(value) for value in (*first, *second)):
+        raise ValueError("embeddings must contain finite values")
+    first_norm = math.sqrt(sum(value * value for value in first))
+    second_norm = math.sqrt(sum(value * value for value in second))
+    if first_norm == 0.0 or second_norm == 0.0:
+        return 0.0
+    similarity = sum(left * right for left, right in zip(first, second)) / (first_norm * second_norm)
+    return 1.0 - max(-1.0, min(1.0, similarity))
 
 
 def _unique_prefix(values: Sequence[str], k: int) -> list[str]:
-    return _unique(values)[:k]
+    return _unique_all(values)[:k]
 
 
-def _discounted_gain(grades: Sequence[int] | Any) -> float:
-    return sum((2**grade - 1) / math.log2(rank + 1) for rank, grade in enumerate(grades, start=1))
+def _unique_all(values: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(values))
 
 
-def _grade(value: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError("relevance grades must be non-negative integers")
-    return value
-
-
-def _validate_grade(value: int) -> None:
-    _grade(value)
+def _gain(grade: int) -> float:
+    return float((2 ** max(grade, 0)) - 1)
 
 
 def _validate_k(k: int) -> None:
-    if isinstance(k, bool) or not isinstance(k, int) or k < 1:
-        raise ValueError("k must be a positive integer")
-
-
-def _finite(value: float, label: str) -> float:
-    if not math.isfinite(value):
-        raise ValueError(f"{label} must be finite")
-    return value
-
-
-def _probability(value: float) -> float:
-    value = _finite(float(value), "probability")
-    if not 0.0 <= value <= 1.0:
-        raise ValueError("probabilities must be between 0 and 1")
-    return value
-
-
-def _binary(value: int | bool) -> int:
-    if value not in (0, 1, False, True):
-        raise ValueError("outcomes must be binary")
-    return int(value)
-
-
-def _mean(values: Sequence[float] | Any) -> float:
-    values = list(values)
-    return 0.0 if not values else sum(values) / len(values)
-
-
-def _field(item: Any, name: str) -> Any:
-    value = item.get(name) if isinstance(item, Mapping) else getattr(item, name, None)
-    if value is None:
-        raise ValueError(f"diversity item is missing {name}")
-    return value
-
-
-def _categorical_distance(left: Any, right: Any) -> float:
-    left_features = set(_field(left, "genres")) | set(_field(left, "themes"))
-    right_features = set(_field(right, "genres")) | set(_field(right, "themes"))
-    union = left_features | right_features
-    return 0.0 if not union else 1.0 - len(left_features & right_features) / len(union)
-
-
-def _has_nonzero_norm(vector: Sequence[float]) -> bool:
-    return bool(vector) and all(math.isfinite(float(value)) for value in vector) and math.sqrt(sum(float(value) ** 2 for value in vector)) > 0.0
-
-
-def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
-    if len(left) != len(right):
-        raise ValueError("embedding dimensions must match")
-    numerator = sum(float(a) * float(b) for a, b in zip(left, right))
-    denominator = math.sqrt(sum(float(a) ** 2 for a in left)) * math.sqrt(sum(float(b) ** 2 for b in right))
-    return max(-1.0, min(1.0, numerator / denominator))
+    if isinstance(k, bool) or k < 1:
+        raise ValueError("k must be at least 1")
