@@ -14,6 +14,9 @@ integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
 with the code that actually merged.
 
+Next packet: [IMD-003](IMD-003-shared-discovery-contracts.md), shared discovery
+envelopes and version primitives.
+
 ## First Dispatch Wave
 
 | Task | Purpose | Can run concurrently |
