@@ -122,6 +122,17 @@ wait_for_ssh() {
   done
 }
 
+wait_for_bootstrap() {
+  local attempts=0
+  log "waiting for cloud-init Docker bootstrap to finish"
+  until ssh_exec "cloud-init status --wait >/dev/null 2>&1; test -x /usr/bin/docker"; do
+    attempts=$((attempts + 1))
+    [[ "$attempts" -lt 60 ]] || die "cloud-init Docker bootstrap did not finish within five minutes"
+    sleep 5
+  done
+  ssh_exec "sudo install -d -o '$ADMIN_USERNAME' -g '$ADMIN_USERNAME' -m 0755 '$REMOTE_PATH'"
+}
+
 write_remote_env() {
   ssh_exec bash -s <<'EOF'
 set -eu
@@ -176,6 +187,7 @@ up() {
   terraform_apply
   az vm start --resource-group "$(output resource_group_name)" --name "$(output vm_name)" >/dev/null
   wait_for_ssh
+  wait_for_bootstrap
   sync_repo
   start_remote
   log "ready: $(connection_target)"
@@ -188,6 +200,7 @@ sync() {
   ensure_key
   terraform_init
   wait_for_ssh
+  wait_for_bootstrap
   sync_repo
 }
 
@@ -197,6 +210,7 @@ start() {
   terraform_init
   az vm start --resource-group "$(output resource_group_name)" --name "$(output vm_name)" >/dev/null
   wait_for_ssh
+  wait_for_bootstrap
   start_remote
 }
 
