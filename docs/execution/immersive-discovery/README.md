@@ -8,8 +8,8 @@ Use one task ID per Luna session. Give Luna the canonical plan and exactly one
 packet. Do not include unrelated chat history, cloud credentials, or broad
 repository context.
 
-Current checkpoint: **IMD-075 complete**.
-IMD-001 through IMD-075 are merged and validated. IMD-076 through IMD-088 are
+Current checkpoint: **IMD-076 complete**.
+IMD-001 through IMD-076 are merged and validated. IMD-077 through IMD-088 are
 optional intelligence/operations follow-up work and are not part of this
 completed core request.
 later tasks are backlog rows, not executable prompts, until the
@@ -17,10 +17,15 @@ integration owner creates and reviews their exact packet one merge wave ahead.
 This just-in-time packet rule keeps owned paths and validation commands aligned
 with the code that actually merged.
 
-Next dispatch target: **IMD-076** — optional intelligence integration review.
+Next dispatch target: **IMD-077** — create the implementation packet for the
+versioned context adapter after review of IMD-076.
 
-Core IMD-005 through IMD-075 is complete. Remaining work is optional
-intelligence, local operations, and production evidence from IMD-076 onward.
+IMD-076 is intentionally a small discovery milestone. It makes the near-term
+LLM value concrete through versioned context, compaction, shadow evaluation,
+and cost/latency gates without enabling an online LLM ranker.
+
+Core IMD-005 through IMD-076 is complete. Remaining work is optional
+intelligence, local operations, and production evidence from IMD-077 onward.
 
 ## First Dispatch Wave
 

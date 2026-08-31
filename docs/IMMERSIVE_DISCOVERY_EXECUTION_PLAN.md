@@ -1,6 +1,6 @@
 # Immersive Discovery Vertical Execution Plan
 
-Status: IMD-001 through IMD-075 complete; IMD-076 through IMD-088 remain
+Status: IMD-001 through IMD-076 complete; IMD-077 through IMD-088 remain
 optional intelligence, operations, and production-readiness follow-up work.
 
 Audience: Engineering leads, reviewers, and delegated Luna coding sessions
@@ -159,6 +159,40 @@ query or home request
   -> offline profile/features/model evaluation
 ```
 
+### LLM-assisted ranking evolution
+
+The product gets immediate value from LLMs as bounded context engineers, not
+as an unconstrained online ranker. This keeps the current demo deterministic
+while leaving a measured path toward an LLM-native ranker.
+
+```mermaid
+flowchart LR
+  subgraph NOW[Now: deterministic demo]
+    N1[OpenSearch BM25 + vector + ACL] --> N2[Candidate fusion]
+    N2 --> N3[CPU feature ranker]
+    N3 --> N4[Utility + safety policy]
+  end
+  subgraph NEXT[Near term: context engineering]
+    X1[Catalog + user + session context] --> X2[Bounded LLM enrichment]
+    X2 --> X3[Versioned context/features]
+    X3 --> X4[Existing CPU or learned ranker]
+    X4 --> X5[Utility + safety policy]
+  end
+  subgraph FUTURE[Future experiment: GenRec-style]
+    F1[Eligible candidates + compact context] --> F2[LLM context encoder]
+    F2 --> F3[Catalog-aware scoring head]
+    F3 --> F4[Utility + safety policy]
+  end
+  NOW -. baseline .-> NEXT
+  NEXT -. offline lift + cost evidence .-> FUTURE
+```
+
+The near-term path may run offline or in shadow mode and must emit the same
+versioned ranking evidence as the current path. The future path is an
+experiment only: it requires catalog-constrained scoring, compacted context,
+offline lift, latency/cost evidence, and an explicit model-on/model-off review
+before it can affect served order. See [IMD-076](execution/immersive-discovery/IMD-076-llm-context-engineering.md).
+
 ### Ownership boundaries
 
 | Concern | Owner |
@@ -196,6 +230,13 @@ offline decision record before adding a large sequence model or GPU serving.
 LLMs are optional and bounded to query interpretation, multilingual expansion,
 metadata enrichment, conversational refinement, and offline judging. Every
 online path has a deterministic no-LLM fallback.
+
+For LLM-native recommendation, borrow the useful pattern of compacting user,
+item, and session history into a catalog-aware context and scoring only known
+candidates. Do not copy a vendor-specific architecture or claim comparable
+lift from synthetic data. The first implementation milestone is the versioned
+context contract and shadow/offline evaluation boundary; online LLM scoring
+remains deferred.
 
 ## 7. Non-Negotiable Invariants
 
@@ -437,6 +478,7 @@ live Roblox call, or production credential.
 | IMD-073 | Add conversational discovery refinement | New refinement module and tests | IMD-060, IMD-070, IMD-071 | Follow-up constraints remain bounded; session memory is explicit; deterministic search remains available |
 | IMD-074 | Add offline LLM relevance-judge workflow | New judge module and tests | IMD-002, IMD-007, IMD-071 | Judge proposes labels with prompt/model versions; human labels remain authoritative; no online rank dependency |
 | IMD-075 | Add prompt-injection, token-budget, cache, routing, and kill-switch policy | New intelligence safety module and tests | IMD-071 to IMD-074 | Catalog text remains untrusted data; calls are capped/versioned/redacted; kill switch immediately restores no-LLM mode |
+| IMD-076 | Freeze LLM context-engineering contract and GenRec experiment boundary | `docs/adr/ADR-IMD-076-llm-context-engineering.md` and evaluation checklist | IMD-039, IMD-047, IMD-058, IMD-075 | Context fields, compaction, candidate binding, provenance, budgets, shadow mode, and promotion gates are versioned; no online LLM ranker is enabled |
 
 ### I. Local operations and release evidence
 
@@ -499,6 +541,7 @@ live Roblox call, or production credential.
 | 40 | IMD-086 | Cost model consumes completed local load evidence |
 | 41 | IMD-087 | Run clean local demo acceptance |
 | 42 | IMD-088 | Senior review; no automatic production or cloud approval |
+| 43 | IMD-076 | Review the context contract before implementing any LLM-assisted enrichment or ranker experiment |
 
 The integration owner pushes after each reviewed merge wave. Do not dispatch a
 dependent wave from an unpushed local commit.

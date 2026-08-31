@@ -83,6 +83,40 @@ An ineligible item cannot be reintroduced by a later stage. Every response
 includes an impression token and enough versioned evidence to explain the
 result without exposing sensitive user history.
 
+### Ranking evolution boundary
+
+The current serving path is intentionally deterministic and catalog-bound:
+
+```mermaid
+flowchart LR
+  A[OpenSearch BM25 + vector + ACL] --> B[Candidate fusion]
+  B --> C[CPU or approved learned ranker]
+  C --> D[Utility, safety, diversity, freshness]
+  D --> E[Discovery response + audit]
+```
+
+LLMs can improve the next stage by compacting and enriching catalog, user, and
+session context before ranking. That path is allowed offline or in shadow mode
+only, with a versioned context contract and deterministic fallback:
+
+```mermaid
+flowchart LR
+  A[Catalog + user + session history] --> B[Bounded LLM context adapter]
+  B --> C[Versioned compact context]
+  C --> D[Existing ranker]
+  D --> E[Policy + audit]
+  B -. timeout, budget, kill switch .-> F[Deterministic context fallback]
+  F --> D
+```
+
+A later GenRec-style experiment may use a compact context encoder and a
+catalog-aware scoring head, but it is not part of the current online decision
+path. It must score only eligible retrieved candidates, preserve reason and
+version evidence, and pass offline relevance, policy, latency, cost, and
+model-on/model-off gates before any traffic exposure. Synthetic demo data can
+validate plumbing and reproducibility; it cannot establish customer lift. The
+decision is tracked in [IMD-076](../execution/immersive-discovery/IMD-076-llm-context-engineering.md).
+
 ## Safety, Privacy, and Audit Constraints
 
 - Tenant, age, consent, locale, safety, availability, and legal filters are
@@ -112,10 +146,11 @@ documented provenance, terms, rate limits, and explicit licensing review before
 use. This ADR does not approve a particular external dataset or license.
 
 LLMs may assist with fictional metadata, bounded query interpretation,
-multilingual expansion, conversational refinement, and offline judging. An LLM
-cannot alter identity, consent, hard eligibility, safety filters, or audit
-truth, and cannot become the online ranker of record. Every LLM path has a
-deterministic no-LLM fallback.
+multilingual expansion, conversational refinement, offline judging, and
+versioned context compaction for ranking experiments. An LLM cannot alter
+identity, consent, hard eligibility, safety filters, candidate membership, or
+audit truth. It cannot become the online ranker of record until a later ADR
+approves the evidence. Every LLM path has a deterministic no-LLM fallback.
 
 ## Alternatives Considered
 
@@ -154,6 +189,7 @@ The following remain open until measured evidence and a later ADR exist:
 - production cloud topology, residency, security, backup, and SLOs;
 - billion-item vector/index architecture and capacity economics;
 - GPU or large sequence-model serving;
+- online LLM ranking or a GenRec-style catalog-aware scoring head;
 - creator monetization, ads, auctions, matchmaking, chat, and game hosting;
 - whether a future vertical requires a separate specialized retrieval backend.
 
@@ -168,6 +204,7 @@ requires a materially different authority, privacy, or residency model.
 ## References
 
 - [Immersive Discovery Execution Plan](../IMMERSIVE_DISCOVERY_EXECUTION_PLAN.md)
+- [LLM Context Engineering ADR](ADR-IMD-076-llm-context-engineering.md)
 - [OpenSearch Enterprise Search ADR](ADR-OS-001-opensearch-enterprise-search.md)
 - [OpenSearch Execution Plan](../ENTERPRISE_SEARCH_OPENSEARCH_EXECUTION_PLAN.md)
 - [OpenSearch Operations Review](../execution/enterprise-search/OS-080-088-operations-review.md)
