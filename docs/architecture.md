@@ -18,6 +18,17 @@ system-of-record stores. Qdrant remains only as a legacy/local compatibility
 adapter for older generic RAG and multimodal paths; it is not the authority for
 the enterprise support-search workflow.
 
+The standalone analytics product is evolving through the
+[Agentic Data Stack Execution Plan](AGENTIC_DATA_STACK_EXECUTION_PLAN.md).
+Its Archify-generated [animated system diagram](diagrams/agentic-data-stack-system.html)
+shows the ontology/context layer, PostgreSQL customer path, and DuckDB
+local/data-lake path. The companion
+[request workflow](diagrams/agentic-data-stack-request.html) follows the bounded
+agent graph, deterministic trust gates, execution, evidence, and reviewed
+improvement loop. This analytics path is separately deployable and does not
+make the support API its runtime boundary. Diagram sources and update rules are
+documented in the [diagram README](diagrams/README.md).
+
 ---
 
 ## 1. System Architecture (Multi-Cloud)

@@ -6,7 +6,7 @@
        pause-azure resume-azure import-azure \
        azure-dev-up azure-dev-sync azure-dev-start azure-dev-stop azure-dev-status azure-dev-ssh azure-dev-tunnel azure-dev-destroy observability-up observability-down \
        verify-cleanup verify-cleanup-delete verify-cleanup-azure verify-cleanup-azure-delete \
-       setup lint format \
+       setup lint format architecture-check architecture-build \
        dev-control-plane dev-data-plane dev-split test-control-plane test-data-plane test-all
 
 help:
@@ -69,6 +69,8 @@ help:
 	@echo "    make setup         - Install deps + pre-commit hooks"
 	@echo "    make lint          - Run ruff linter"
 	@echo "    make format        - Auto-fix lint + format code"
+	@echo "    make architecture-check - Validate Archify diagram sources at showcase quality"
+	@echo "    make architecture-build - Validate and regenerate interactive architecture HTML"
 	@echo ""
 	@echo "  Split-Plane Development:"
 	@echo "    make dev-control-plane  - Run control plane locally"
@@ -110,6 +112,14 @@ lint:
 
 format:
 	ruff check --fix && ruff format
+
+architecture-check:
+	./scripts/architecture/archify.sh validate architecture docs/diagrams/agentic-data-stack.architecture.json --quality showcase --json
+	./scripts/architecture/archify.sh validate workflow docs/diagrams/agentic-data-stack-request.workflow.json --quality showcase --json
+
+architecture-build: architecture-check
+	./scripts/architecture/archify.sh deliver architecture docs/diagrams/agentic-data-stack.architecture.json docs/diagrams/agentic-data-stack-system.html --quality showcase --json
+	./scripts/architecture/archify.sh deliver workflow docs/diagrams/agentic-data-stack-request.workflow.json docs/diagrams/agentic-data-stack-request.html --quality showcase --json
 
 up:
 	docker compose up -d
