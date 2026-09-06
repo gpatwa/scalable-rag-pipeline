@@ -1,6 +1,6 @@
 # ADS-005: PostgreSQL Control Store
 
-Status: **Review**  
+Status: **Review**
 Depends on: ADS-003
 
 ## Delivered

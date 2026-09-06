@@ -1,8 +1,8 @@
 # ADS-006: Routing Flags
 
-Status: Review  
-Milestone: M0  
-Depends on: ADS-003  
+Status: Review
+Milestone: M0
+Depends on: ADS-003
 Scope: provider-neutral route selection and governed-action guard
 
 ## Objective
