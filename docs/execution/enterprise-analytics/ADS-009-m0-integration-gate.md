@@ -52,6 +52,14 @@ The disposable database was removed after the run. The shared local `rag_db`
 was not used for drill data. This is local PostgreSQL evidence only; it does
 not substitute for production topology, authorization/RLS, or security sign-off.
 
+## Independent review
+
+The findings-first judge report and remediation actions are recorded in
+[ADS-009 independent review](../../reviews/ADS-009-independent-review-2026-09-06.md).
+Its current decision is **Not ready for M0 approval**. The report is advisory;
+the engineering, security, and authorized-owner fields below remain the final
+decision authority.
+
 ## M0 go/no-go checklist
 
 - [x] Create, checkpoint, worker-loss resume, and terminal path is deterministic.
