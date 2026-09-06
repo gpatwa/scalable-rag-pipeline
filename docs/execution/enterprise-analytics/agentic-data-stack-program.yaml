@@ -100,13 +100,13 @@ milestones:
 
 tasks:
   ADS-001: {milestone: M0, status: review, depends_on: []}
-  ADS-002: {milestone: M0, status: planned, depends_on: [ADS-001]}
+  ADS-002: {milestone: M0, status: review, depends_on: [ADS-001]}
   ADS-003: {milestone: M0, status: planned, depends_on: [ADS-002]}
   ADS-004: {milestone: M0, status: planned, depends_on: [ADS-003]}
   ADS-005: {milestone: M0, status: planned, depends_on: [ADS-003]}
   ADS-006: {milestone: M0, status: planned, depends_on: [ADS-003]}
   ADS-007: {milestone: M0, status: review, depends_on: []}
-  ADS-008: {milestone: M0, status: planned, depends_on: [ADS-001]}
+  ADS-008: {milestone: M0, status: review, depends_on: [ADS-001]}
   ADS-009: {milestone: M0, status: planned, depends_on: [ADS-003, ADS-004, ADS-005, ADS-006, ADS-007, ADS-008]}
   ADS-010: {milestone: M1, status: planned, depends_on: [ADS-008]}
   ADS-011: {milestone: M1, status: planned, depends_on: [ADS-008, ADS-010]}
