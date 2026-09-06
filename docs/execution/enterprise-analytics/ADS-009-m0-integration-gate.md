@@ -1,7 +1,7 @@
 # ADS-009: M0 Integration Gate
 
-Status: **Review**  
-Milestone: M0  
+Status: **Review**
+Milestone: M0
 Dependencies: ADS-003 agent-run-state contracts, ADS-004 typed tool registry,
 ADS-005 PostgreSQL control-store schema, ADS-006 routing flags, ADS-007
 baseline evidence, and ADS-008 compatibility boundary.

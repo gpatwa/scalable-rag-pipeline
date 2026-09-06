@@ -1,7 +1,7 @@
 # ADS-009 M0 Integration Threat Model
 
-Status: **Review**  
-Security reviewer: ____________________  Date: __________  Decision: __________  
+Status: **Review**
+Security reviewer: ____________________  Date: __________  Decision: __________
 Engineering reviewer: __________________  Date: __________  Decision: __________
 
 This threat model covers the deterministic local M0 composition harness only.
