@@ -42,14 +42,15 @@ duplicate delivery. The harness tests these cases:
 ## Mitigations and residual risks
 
 Typed Pydantic contracts reject unknown fields and malformed state, transitions
-are authored and evidence-bearing, SQLite migration constraints exercise
-checkpoint uniqueness and append-only facts, and the route/registry contracts
-fail closed. The fake graph uses deterministic synthetic identifiers and does
-not execute tools or SQL.
+are authored and evidence-bearing, SQLite and local PostgreSQL migration
+constraints exercise checkpoint uniqueness and append-only facts, and the
+route/registry contracts fail closed. The fake graph uses deterministic
+synthetic identifiers and does not execute tools or SQL.
 
-Residual risks are material: SQLite does not prove PostgreSQL locking or
-production isolation; the harness is not a distributed crash drill; repository
-compare-and-set and authorization/RLS wiring remain future work; adapter
-idempotency and outbox claim behavior require live integration evidence; and
-no security reviewer has signed off. These risks block a security approval and
-must remain visible at the M0 go/no-go review.
+Residual risks are material: the local PostgreSQL drill does not prove
+production topology or isolation; the harness is not a distributed crash
+drill; repository compare-and-set and authorization/RLS wiring remain future
+work; adapter idempotency beyond the control-store dedupe contract requires
+live integration evidence; and no security reviewer has signed off. These
+risks block a security approval and must remain visible at the M0 go/no-go
+review.
