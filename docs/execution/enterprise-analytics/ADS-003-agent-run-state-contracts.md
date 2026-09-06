@@ -1,7 +1,7 @@
 # ADS-003: Agent Run-State Contracts
 
-Status: **Review**  
-Depends on: ADS-002  
+Status: **Review**
+Depends on: ADS-002
 Scope: Versioned graph execution contracts only
 
 ## Delivered
